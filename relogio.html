@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><title>Relógio da Central</title></head>
+<body>
+<script>
+// Relógio do "modo segundo plano" para portais que bloqueiam o relógio próprio.
+// Esta página fica invisível dentro do portal: o Worker dela não é desacelerado
+// pelo Chrome com a aba minimizada, e ela avisa a Central a cada "tique".
+(function () {
+  var src = "var t={};onmessage=function(e){var d=e.data;if(d.c==='s'){t[d.id]=(d.r?setInterval:setTimeout)(function(){postMessage(d.id)},d.ms)}else if(d.c==='x'){clearTimeout(t[d.id]);clearInterval(t[d.id]);delete t[d.id]}}";
+  var worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  var pai = null, origem = '*';
+  worker.onmessage = function (e) { if (pai) pai.postMessage({ central_tique: e.data }, origem); };
+  window.addEventListener('message', function (e) {
+    var d = e.data;
+    if (!d || !d.central_relogio) return;
+    pai = e.source; origem = e.origin;
+    if (d.c === 'p') { pai.postMessage({ central_tique: 'pong' }, origem); return; }
+    worker.postMessage({ c: d.c, id: d.id, ms: d.ms, r: d.r });
+  });
+})();
+</script>
+</body>
+</html>
