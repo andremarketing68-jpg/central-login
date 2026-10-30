@@ -92,6 +92,20 @@
     return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
   }
 
+  async function enviarFila(dados, fila) {
+    try {
+      const r = await window.centralRpc('registrar_usos_lote', { p_token: dados.token, p_dispositivo: dados.dispositivo, p_eventos: fila });
+      if (!r.ok) throw new Error(r.erro);
+    } catch (e) {
+      if (!/could not find|schema cache|404/i.test(e.message)) throw e;
+      // Função nova ainda não disponível na API: registra um por um pelo método antigo
+      for (const ev of fila) {
+        const r = await window.centralRpc('registrar_uso', { p_token: dados.token, p_dispositivo: dados.dispositivo, p_robo: ev.robo, p_pagina: ev.pagina });
+        if (!r.ok) throw new Error(r.erro);
+      }
+    }
+  }
+
   async function entregar() {
     if (!sessao || !pedido || entregue) return;
     entregue = true;
@@ -102,10 +116,21 @@
     if (pedido.modo === 'ponte') {
       // Portal que bloqueia conexões: esta janela envia o uso guardado e entrega o código dos robôs
       $('voltando').textContent = 'Carregando os robôs...';
-      try {
-        if (pedido.fila && pedido.fila.length) {
-          await window.centralRpc('registrar_usos_lote', { p_token: dados.token, p_dispositivo: dados.dispositivo, p_eventos: pedido.fila });
+      // Envia o uso guardado (nunca impede os robôs de carregar)
+      const PEND = 'central_fila_pendente';
+      let fila = [];
+      try { fila = JSON.parse(localStorage.getItem(PEND) || '[]'); } catch (e) {}
+      fila = fila.concat(pedido.fila || []).slice(-1000);
+      if (fila.length) {
+        try {
+          await enviarFila(dados, fila);
+          localStorage.removeItem(PEND);
+        } catch (e) {
+          localStorage.setItem(PEND, JSON.stringify(fila));
+          console.warn('[Central] Uso guardado para enviar depois:', e.message);
         }
+      }
+      try {
         const r = await fetch(cfg.CODIGO_URL + '?v=' + Date.now());
         if (!r.ok) throw new Error('arquivo dos robôs não encontrado (' + r.status + ')');
         const codigo = await r.text();
