@@ -6,7 +6,10 @@ window.CENTRAL_CONFIG = {
 
   // Opcional: só entrega o login para estes sites (ex.: 'https://portal.amil.com.br').
   // Deixe vazio [] para aceitar qualquer portal.
-  ORIGENS_PERMITIDAS: []
+  ORIGENS_PERMITIDAS: [],
+
+  // Arquivo dos robôs no Gist (usado pela "ponte" nos portais que bloqueiam conexões externas)
+  CODIGO_URL: 'https://gist.githubusercontent.com/andremarketing68-jpg/aabe65494b8ed6b659e6c0ed1c69828b/raw/central-teste.js'
 };
 
 // Chamada às funções do banco (compartilhada pelas páginas)
