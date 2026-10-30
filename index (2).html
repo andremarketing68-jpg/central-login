@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central de Automação — Login</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #121212; color: #f1f1f1; font-family: system-ui, Arial, sans-serif; }
+  .card { width: 340px; background: #1e1e1e; border: 2px solid #2d7dff; border-radius: 12px;
+          padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  h1 { margin: 0 0 4px; font-size: 19px; text-align: center; color: #2d7dff; }
+  .sub { margin: 0 0 20px; font-size: 13px; text-align: center; color: #aaa; }
+  label { display: block; font-size: 13px; color: #ccc; margin: 12px 0 5px; }
+  input { width: 100%; padding: 11px; border-radius: 8px; border: 1px solid #444; background: #2a2a2a;
+          color: #fff; font-size: 14px; }
+  input:focus { outline: none; border-color: #2d7dff; }
+  button { width: 100%; padding: 12px; margin-top: 18px; border: none; border-radius: 8px; cursor: pointer;
+           font-weight: bold; font-size: 14px; background: #2d7dff; color: #fff; }
+  button:hover { background: #1a5bcc; }
+  button:disabled { opacity: .6; cursor: wait; }
+  button.cinza { background: #444; margin-top: 10px; }
+  .erro { display: none; margin-top: 14px; padding: 10px; border-radius: 6px; background: #4a1c1c;
+          border: 1px solid #c0392b; color: #ffb4a8; font-size: 13px; line-height: 1.4; }
+  .ok { text-align: center; font-size: 14px; line-height: 1.6; }
+  .ok strong { color: #2ecc71; }
+  .rodape { text-align: center; margin-top: 16px; font-size: 12px; color: #777; }
+  a { color: #2d7dff; }
+  .oculto { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🤖 Central de Automação</h1>
+  <p class="sub" id="sub">Verificando login...</p>
+
+  <form id="form" class="oculto" autocomplete="on">
+    <label for="login">Usuário</label>
+    <input id="login" name="username" autocomplete="username" required autofocus>
+    <label for="senha">Senha</label>
+    <input id="senha" name="password" type="password" autocomplete="current-password" required>
+    <button id="entrar" type="submit">Entrar</button>
+    <div class="erro" id="erro"></div>
+  </form>
+
+  <form id="form-senha" class="oculto">
+    <p id="senha-titulo" style="margin:0 0 6px;font-weight:bold;text-align:center;color:#ffcc00">🔑 Crie sua senha</p>
+    <p id="senha-texto" style="margin:0 0 6px;font-size:13px;color:#aaa;text-align:center">Este é seu primeiro acesso. Escolha uma senha só sua.</p>
+    <div id="campo-atual">
+      <label for="s-atual">Senha atual (a que você recebeu)</label>
+      <input id="s-atual" type="password" autocomplete="current-password">
+    </div>
+    <label for="s-nova">Nova senha (mínimo 6 caracteres)</label>
+    <input id="s-nova" type="password" autocomplete="new-password" required minlength="6">
+    <label for="s-conf">Repita a nova senha</label>
+    <input id="s-conf" type="password" autocomplete="new-password" required>
+    <button id="s-salvar" type="submit">Salvar senha</button>
+    <button id="s-cancelar" type="button" class="cinza">Cancelar</button>
+    <div class="erro" id="erro-senha"></div>
+  </form>
+
+  <div id="logado" class="oculto ok">
+    <div>✅ Logado como <strong id="nome"></strong></div>
+    <div style="color:#aaa;font-size:13px">Válido até <span id="ate"></span></div>
+    <div id="voltando" style="color:#aaa;font-size:13px;margin-top:8px"></div>
+    <button id="admin" class="oculto" onclick="location.href='admin.html'">📊 Painel do administrador</button>
+    <button id="trocar" class="cinza">🔑 Trocar minha senha</button>
+    <button id="sair" class="cinza">Sair deste computador</button>
+  </div>
+
+  <div class="rodape">Criado por André Fernandes</div>
+</div>
+
+<script src="config.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const cfg = window.CENTRAL_CONFIG;
+  let pedido = null;      // { fonte, origem, modo, fila } do portal que pediu o login
+  let sessao = null;      // sessão válida
+  let entregue = false;
+
+  function mostrar(qual) {
+    $('form').classList.toggle('oculto', qual !== 'form');
+    $('form-senha').classList.toggle('oculto', qual !== 'senha');
+    $('logado').classList.toggle('oculto', qual !== 'logado');
+  }
+  function erro(msg) { $('erro').textContent = msg; $('erro').style.display = msg ? 'block' : 'none'; }
+
+  function horaFim(iso) {
+    return new Date(iso).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  }
+
+  async function entregar() {
+    if (!sessao || !pedido || entregue) return;
+    entregue = true;
+    const dados = {
+      token: sessao.token, dispositivo: window.centralDispositivo(),
+      nome: sessao.nome, admin: sessao.admin, valido_ate: sessao.valido_ate
+    };
+    if (pedido.modo === 'ponte') {
+      // Portal que bloqueia conexões: esta janela envia o uso guardado e entrega o código dos robôs
+      $('voltando').textContent = 'Carregando os robôs...';
+      try {
+        if (pedido.fila && pedido.fila.length) {
+          await window.centralRpc('registrar_usos_lote', { p_token: dados.token, p_dispositivo: dados.dispositivo, p_eventos: pedido.fila });
+        }
+        const r = await fetch(cfg.CODIGO_URL + '?v=' + Date.now());
+        if (!r.ok) throw new Error('arquivo dos robôs não encontrado (' + r.status + ')');
+        const codigo = await r.text();
+        pedido.fonte.postMessage({ tipo: 'ponte-codigo', codigo, sessao: dados }, pedido.origem);
+      } catch (e) {
+        entregue = false;
+        $('voltando').textContent = '❌ Erro ao carregar os robôs: ' + e.message;
+        return;
+      }
+    } else {
+      pedido.fonte.postMessage({ tipo: 'central-login', ...dados }, pedido.origem);
+    }
+    $('voltando').textContent = 'Voltando para o portal...';
+    setTimeout(() => window.close(), 400);
+  }
+
+  function logado(s) {
+    sessao = s;
+    $('sub').textContent = 'Você já pode usar os robôs hoje.';
+    $('nome').textContent = s.nome;
+    $('ate').textContent = horaFim(s.valido_ate);
+    $('admin').classList.toggle('oculto', !s.admin);
+    mostrar('logado');
+    entregar();
+  }
+
+  // Tela de criar/trocar senha
+  let senhaConhecida = null;
+  function pedirNovaSenha(s, obrigatorio, atual) {
+    sessao = null;
+    senhaConhecida = atual || null;
+    $('erro-senha').style.display = 'none';
+    ['s-atual', 's-nova', 's-conf'].forEach(i => $(i).value = '');
+    $('campo-atual').classList.toggle('oculto', !!atual);
+    $('s-cancelar').classList.toggle('oculto', obrigatorio);
+    $('senha-titulo').textContent = obrigatorio ? '🔑 Crie sua senha' : '🔑 Trocar minha senha';
+    $('senha-texto').textContent = obrigatorio
+      ? 'Olá, ' + s.nome + '! Este é seu primeiro acesso: escolha uma senha só sua.'
+      : 'Digite a senha atual e a nova.';
+    $('sub').textContent = obrigatorio ? 'Falta só um passo.' : '';
+    $('form-senha')._sessao = s;
+    mostrar('senha');
+    (atual ? $('s-nova') : $('s-atual')).focus();
+  }
+  $('form-senha').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const s = $('form-senha')._sessao;
+    const erroS = (m) => { $('erro-senha').textContent = m; $('erro-senha').style.display = m ? 'block' : 'none'; };
+    if ($('s-nova').value !== $('s-conf').value) return erroS('As duas senhas novas não são iguais.');
+    $('s-salvar').disabled = true;
+    try {
+      const r = await window.centralRpc('trocar_minha_senha', {
+        p_token: s.token, p_dispositivo: window.centralDispositivo(),
+        p_senha_atual: senhaConhecida || $('s-atual').value, p_nova_senha: $('s-nova').value
+      });
+      if (!r.ok) return erroS(r.erro);
+      senhaConhecida = null;
+      s.trocar_senha = false;
+      window.centralSessao.salvar(s);
+      logado(s);
+      $('voltando').textContent = pedido ? 'Senha salva! Voltando para o portal...' : '✅ Senha salva!';
+    } catch (e) {
+      erroS('Não foi possível conectar ao servidor. (' + e.message + ')');
+    } finally {
+      $('s-salvar').disabled = false;
+    }
+  });
+  $('s-cancelar').addEventListener('click', () => logado($('form-senha')._sessao));
+  $('trocar').addEventListener('click', () => pedirNovaSenha(sessao, false, null));
+
+  // O portal (janela que abriu esta) pede o login por mensagem
+  window.addEventListener('message', (ev) => {
+    if (!ev.data || (ev.data.tipo !== 'central-pedir-login' && ev.data.tipo !== 'ponte-ola') || pedido) return;
+    if (cfg.ORIGENS_PERMITIDAS.length && !cfg.ORIGENS_PERMITIDAS.includes(ev.origin)) {
+      $('sub').textContent = 'Este site não está autorizado a usar a Central: ' + ev.origin;
+      return;
+    }
+    pedido = { fonte: ev.source, origem: ev.origin,
+               modo: ev.data.tipo === 'ponte-ola' ? 'ponte' : 'login',
+               fila: Array.isArray(ev.data.fila) ? ev.data.fila.slice(0, 1000) : [] };
+    entregar();
+  });
+
+  $('form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    erro('');
+    $('entrar').disabled = true; $('entrar').textContent = 'Entrando...';
+    try {
+      const r = await window.centralRpc('fazer_login', {
+        p_login: $('login').value, p_senha: $('senha').value,
+        p_dispositivo: window.centralDispositivo(), p_navegador: window.centralNavegador()
+      });
+      if (!r.ok) { erro(r.erro); return; }
+      const s = { token: r.token, nome: r.nome, admin: r.admin, valido_ate: r.valido_ate, trocar_senha: r.trocar_senha };
+      window.centralSessao.salvar(s);
+      const digitada = $('senha').value;
+      $('senha').value = '';
+      if (r.trocar_senha) pedirNovaSenha(s, true, digitada);
+      else logado(s);
+    } catch (e) {
+      erro('Não foi possível conectar ao servidor. (' + e.message + ')');
+    } finally {
+      $('entrar').disabled = false; $('entrar').textContent = 'Entrar';
+    }
+  });
+
+  $('sair').addEventListener('click', async () => {
+    const s = window.centralSessao.ler();
+    window.centralSessao.limpar();
+    sessao = null;
+    if (s) { try { await window.centralRpc('sair', { p_token: s.token, p_dispositivo: window.centralDispositivo() }); } catch (e) {} }
+    $('sub').textContent = 'Faça login para usar os robôs.';
+    mostrar('form');
+  });
+
+  // Ao abrir: já existe login de hoje neste computador?
+  (async () => {
+    // Aberta pelo botão "Sair" de um portal que usa a ponte
+    if (new URLSearchParams(location.search).has('sair')) {
+      const s = window.centralSessao.ler();
+      window.centralSessao.limpar();
+      if (s) { try { await window.centralRpc('sair', { p_token: s.token, p_dispositivo: window.centralDispositivo() }); } catch (e) {} }
+      $('sub').textContent = '✅ Você saiu deste computador.';
+      setTimeout(() => window.close(), 1200);
+      return;
+    }
+    const s = window.centralSessao.ler();
+    if (s) {
+      try {
+        const r = await window.centralRpc('validar_sessao', { p_token: s.token, p_dispositivo: window.centralDispositivo() });
+        if (r.ok && r.trocar_senha) { pedirNovaSenha({ ...s, nome: r.nome, admin: r.admin }, true, null); return; }
+        if (r.ok) { logado({ ...s, nome: r.nome, admin: r.admin }); return; }
+        window.centralSessao.limpar();
+        erro(r.erro);
+      } catch (e) {
+        erro('Não foi possível conectar ao servidor. (' + e.message + ')');
+      }
+    }
+    $('sub').textContent = 'Faça login para usar os robôs.';
+    mostrar('form');
+    $('login').focus();
+  })();
+})();
+</script>
+</body>
+</html>

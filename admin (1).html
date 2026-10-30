@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Central de Automação — Painel</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #121212; color: #eee; font-family: system-ui, Arial, sans-serif; font-size: 14px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+           padding: 14px 24px; background: #1e1e1e; border-bottom: 2px solid #2d7dff; }
+  header h1 { margin: 0; font-size: 18px; color: #2d7dff; }
+  main { max-width: 1150px; margin: 0 auto; padding: 20px; }
+  .filtros { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+  button, .btn { padding: 8px 14px; border: none; border-radius: 7px; cursor: pointer; font-weight: 600;
+                 background: #2d7dff; color: #fff; font-size: 13px; }
+  button:hover { filter: brightness(1.15); }
+  button.sec { background: #333; } button.sec.ativo { background: #2d7dff; }
+  button.perigo { background: #c0392b; } button.mini { padding: 4px 9px; font-size: 12px; }
+  input, select { padding: 8px; border-radius: 7px; border: 1px solid #444; background: #2a2a2a; color: #fff; font-size: 13px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .kpi { background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 14px; }
+  .kpi .v { font-size: 26px; font-weight: 700; color: #fff; } .kpi .l { color: #999; font-size: 12px; margin-top: 2px; }
+  .grade { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 850px) { .grade { grid-template-columns: 1fr; } }
+  section { background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 16px; margin-bottom: 16px; overflow-x: auto; }
+  section h2 { margin: 0 0 12px; font-size: 15px; color: #8fb6ff; display: flex; justify-content: space-between; align-items: center; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #2c2c2c; white-space: nowrap; }
+  th { color: #999; font-weight: 600; font-size: 12px; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; } th.n { text-align: right; }
+  .barra { height: 6px; background: #2d7dff; border-radius: 3px; min-width: 2px; }
+  .vazio { color: #777; padding: 10px 0; }
+  .tag { padding: 2px 7px; border-radius: 10px; font-size: 11px; background: #333; }
+  .tag.verde { background: #1e4d2b; color: #7ee2a0; } .tag.vermelho { background: #4a1c1c; color: #ffb4a8; }
+  .tag.amarelo { background: #4a3d10; color: #ffd966; }
+  .novo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  #msg { position: fixed; bottom: 20px; right: 20px; padding: 12px 16px; border-radius: 8px; background: #2d7dff;
+         display: none; max-width: 360px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 Central de Automação — Painel</h1>
+  <div><span id="quem" style="color:#aaa;margin-right:10px"></span><button class="sec" onclick="location.href='index.html'">Voltar ao login</button></div>
+</header>
+<main>
+  <div class="filtros">
+    <button class="sec periodo" data-dias="0">Hoje</button>
+    <button class="sec periodo" data-dias="6">7 dias</button>
+    <button class="sec periodo" data-dias="29">30 dias</button>
+    <span style="color:#777">ou</span>
+    <input type="date" id="ini"> até <input type="date" id="fim">
+    <button onclick="carregar()">Filtrar</button>
+    <button class="sec" onclick="exportarCsv()">⬇ Exportar CSV</button>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi"><div class="v" id="k-total">–</div><div class="l">Robôs executados</div></div>
+    <div class="kpi"><div class="v" id="k-usuarios">–</div><div class="l">Pessoas que usaram</div></div>
+    <div class="kpi"><div class="v" id="k-top">–</div><div class="l">Robô mais usado</div></div>
+    <div class="kpi"><div class="v" id="k-online">–</div><div class="l">Logados agora</div></div>
+  </div>
+
+  <div class="grade">
+    <section><h2>Uso por pessoa</h2><div id="t-usuario"></div></section>
+    <section><h2>Uso por robô</h2><div id="t-robo"></div></section>
+  </div>
+  <section><h2>Quem usou qual robô</h2><div id="t-usuario-robo"></div></section>
+  <section><h2>Uso por dia</h2><div id="t-dia"></div></section>
+  <section><h2>Logados hoje</h2><div id="t-sessoes"></div></section>
+  <section>
+    <h2>Usuários</h2>
+    <div class="novo">
+      <input id="n-login" placeholder="login (ex.: maria)">
+      <input id="n-nome" placeholder="Nome completo">
+      <input id="n-senha" placeholder="Senha provisória (mín. 6)">
+      <label style="display:flex;align-items:center;gap:5px;color:#aaa"><input type="checkbox" id="n-admin"> admin</label>
+      <button onclick="criarUsuario()">+ Criar usuário</button>
+    </div>
+    <div id="t-usuarios"></div>
+  </section>
+  <section><h2>Eventos (logins, bloqueios, saídas)</h2><div id="t-eventos"></div></section>
+</main>
+<div id="msg"></div>
+
+<script src="config.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const sessao = window.centralSessao.ler();
+if (!sessao || !sessao.admin) location.href = 'index.html';
+const base = () => ({ p_token: sessao.token, p_dispositivo: window.centralDispositivo() });
+let ultimo = null;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const dataHora = (iso) => iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const hojeISO = (delta = 0) => { const d = new Date(); d.setDate(d.getDate() - delta); return d.toLocaleDateString('sv-SE'); };
+function aviso(t, erro) { const m = $('msg'); m.textContent = t; m.style.background = erro ? '#c0392b' : '#2d7dff'; m.style.display = 'block'; clearTimeout(m._t); m._t = setTimeout(() => m.style.display = 'none', 4000); }
+
+function tabela(linhas, colunas, barraCol) {
+  if (!linhas.length) return '<div class="vazio">Nenhum registro no período.</div>';
+  const max = barraCol ? Math.max(...linhas.map(l => l[barraCol])) : 0;
+  return '<table><tr>' + colunas.map(c => `<th class="${c.n ? 'n' : ''}">${c.t}</th>`).join('') + (barraCol ? '<th style="width:30%"></th>' : '') + '</tr>' +
+    linhas.map(l => '<tr>' + colunas.map(c => `<td class="${c.n ? 'n' : ''}">${c.f ? c.f(l) : esc(l[c.k])}</td>`).join('') +
+      (barraCol ? `<td><div class="barra" style="width:${(l[barraCol] / max * 100).toFixed(1)}%"></div></td>` : '') + '</tr>').join('') + '</table>';
+}
+
+const nomesEvento = {
+  login: ['Login', 'verde'], logout: ['Saiu', ''], senha_incorreta: ['Senha errada', 'amarelo'],
+  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
+};
+
+async function carregar() {
+  try {
+    const d = await window.centralRpc('admin_relatorio', { ...base(), p_inicio: $('ini').value, p_fim: $('fim').value });
+    ultimo = d;
+    const total = d.por_usuario.reduce((a, l) => a + l.total, 0);
+    $('k-total').textContent = total.toLocaleString('pt-BR');
+    $('k-usuarios').textContent = d.por_usuario.length;
+    $('k-top').textContent = d.por_robo[0] ? d.por_robo[0].robo : '–';
+    $('k-online').textContent = d.sessoes_ativas.length;
+
+    $('t-usuario').innerHTML = tabela(d.por_usuario, [
+      { t: 'Pessoa', k: 'nome' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Dias', k: 'dias', n: 1 },
+      { t: 'Robôs', k: 'robos_diferentes', n: 1 }, { t: 'Último uso', f: l => dataHora(l.ultimo) }], 'total');
+    $('t-robo').innerHTML = tabela(d.por_robo, [
+      { t: 'Robô', k: 'robo' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Pessoas', k: 'usuarios', n: 1 }], 'total');
+    $('t-usuario-robo').innerHTML = tabela(d.por_usuario_robo, [
+      { t: 'Pessoa', k: 'nome' }, { t: 'Robô', k: 'robo' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Último uso', f: l => dataHora(l.ultimo) }], 'total');
+    $('t-dia').innerHTML = tabela(d.por_dia, [
+      { t: 'Dia', f: l => new Date(l.dia + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) },
+      { t: 'Usos', k: 'total', n: 1 }, { t: 'Pessoas', k: 'usuarios', n: 1 }], 'total');
+    $('t-sessoes').innerHTML = tabela(d.sessoes_ativas, [
+      { t: 'Pessoa', k: 'nome' }, { t: 'Computador', k: 'navegador' }, { t: 'Entrou', f: l => dataHora(l.criado_em) },
+      { t: 'Último uso', f: l => dataHora(l.ultimo_uso) },
+      { t: '', f: l => `<button class="mini perigo" onclick="derrubar('${l.usuario_id}', '${esc(l.nome)}')">Encerrar sessão</button>` }]);
+    $('t-eventos').innerHTML = tabela(d.eventos, [
+      { t: 'Quando', f: l => dataHora(l.criado_em) }, { t: 'Pessoa', k: 'nome' },
+      { t: 'O quê', f: l => { const e = nomesEvento[l.tipo] || [l.tipo, '']; return `<span class="tag ${e[1]}">${esc(e[0])}</span>`; } },
+      { t: 'Detalhe', k: 'detalhe' }]);
+    await carregarUsuarios();
+  } catch (e) {
+    aviso(e.message, true);
+    if (/sessão|login|expirou|administrador/i.test(e.message)) setTimeout(() => location.href = 'index.html', 1500);
+  }
+}
+
+async function carregarUsuarios() {
+  const us = await window.centralRpc('admin_listar_usuarios', base());
+  $('t-usuarios').innerHTML = tabela(us, [
+    { t: 'Nome', k: 'nome' }, { t: 'Login', k: 'login' },
+    { t: 'Situação', f: u => (u.ativo ? '<span class="tag verde">Ativo</span>' : '<span class="tag vermelho">Desativado</span>') +
+                           (u.admin ? ' <span class="tag">admin</span>' : '') + (u.bloqueado ? ' <span class="tag amarelo">bloqueado por senha errada</span>' : '') +
+                           (u.trocar_senha ? ' <span class="tag amarelo">ainda não criou a senha</span>' : '') },
+    { t: '', f: u => `<button class="mini sec" onclick="trocarSenha('${u.id}', '${esc(u.nome)}')">Nova senha</button> ` +
+                     `<button class="mini ${u.ativo ? 'perigo' : ''}" onclick="ativar('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>` }]);
+}
+
+async function acao(fn, args, ok) {
+  try { await window.centralRpc(fn, { ...base(), ...args }); aviso(ok); carregar(); } catch (e) { aviso(e.message, true); }
+}
+function derrubar(id, nome) { if (confirm(`Encerrar a sessão de ${nome}? A pessoa precisará logar de novo.`)) acao('admin_derrubar_sessao', { p_usuario_id: id }, 'Sessão encerrada.'); }
+function ativar(id, ativo) { acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: ativo, p_nova_senha: null }, ativo ? 'Usuário reativado.' : 'Usuário desativado.'); }
+function trocarSenha(id, nome) { const s = prompt(`Senha provisória para ${nome} (mín. 6 caracteres).\nNo próximo acesso a pessoa vai criar a própria senha:`); if (s) acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: null, p_nova_senha: s }, 'Senha provisória definida. A pessoa cria a dela no próximo acesso.'); }
+async function criarUsuario() {
+  await acao('admin_criar_usuario', { p_login: $('n-login').value, p_nome: $('n-nome').value, p_senha: $('n-senha').value, p_admin: $('n-admin').checked }, 'Usuário criado. No primeiro acesso a pessoa vai criar a própria senha.');
+  ['n-login', 'n-nome', 'n-senha'].forEach(i => $(i).value = ''); $('n-admin').checked = false;
+}
+
+function exportarCsv() {
+  if (!ultimo) return;
+  const linhas = [['Pessoa', 'Robô', 'Usos', 'Último uso']].concat(ultimo.por_usuario_robo.map(l => [l.nome, l.robo, l.total, dataHora(l.ultimo)]));
+  const csv = '﻿' + linhas.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `uso-robos_${$('ini').value}_a_${$('fim').value}.csv`; a.click();
+}
+
+document.querySelectorAll('.periodo').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.periodo').forEach(x => x.classList.remove('ativo')); b.classList.add('ativo');
+  $('ini').value = hojeISO(+b.dataset.dias); $('fim').value = hojeISO(0); carregar();
+});
+if (sessao) { $('quem').textContent = '👤 ' + sessao.nome; document.querySelector('.periodo[data-dias="0"]').click(); }
+</script>
+</body>
+</html>
