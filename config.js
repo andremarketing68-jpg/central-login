@@ -1,14 +1,17 @@
 // ======== CONFIGURAÇÃO (preencha com os dados do seu projeto Supabase) ========
 // Supabase > Project Settings > API (ou "API Keys")
 window.CENTRAL_CONFIG = {
-  SUPABASE_URL: 'https://xhjsbprtaridthmssrai.supabase.co',
-  SUPABASE_KEY: 'sb_publishable_oBZyeEGupHJFqPlakOhMTg_Mi29bmC6', // "anon public" ou "publishable" — NUNCA a service_role/secret
+  SUPABASE_URL: 'https://pjyzflpwiynjikgyybtl.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_n2TzWfGTw7ESAuZTNu32aQ_WVvb1-aq', // "anon public" ou "publishable" — NUNCA a service_role/secret
 
   // Opcional: só entrega o login para estes sites (ex.: 'https://portal.amil.com.br').
   // Deixe vazio [] para aceitar qualquer portal.
   ORIGENS_PERMITIDAS: [],
 
-  // Arquivo dos robôs no Gist (usado pela "ponte" nos portais que bloqueiam conexões externas)
+  // Canal dos robôs entregue pela "ponte" (portais que bloqueiam conexões, ex.: Benner): 'teste' ou 'producao'
+  CANAL_PONTE: 'teste',
+
+  // (antigo) arquivo dos robôs no Gist — não é mais usado
   CODIGO_URL: 'https://gist.githubusercontent.com/andremarketing68-jpg/aabe65494b8ed6b659e6c0ed1c69828b/raw/central-teste.js'
 };
 
