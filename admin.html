@@ -60,6 +60,8 @@
     <div class="kpi"><div class="v" id="k-usuarios">–</div><div class="l">Pessoas que usaram</div></div>
     <div class="kpi"><div class="v" id="k-top">–</div><div class="l">Robô mais usado</div></div>
     <div class="kpi"><div class="v" id="k-online">–</div><div class="l">Logados agora</div></div>
+    <div class="kpi"><div class="v" id="k-codigos">–</div><div class="l">Códigos lançados (conferidos)</div></div>
+    <div class="kpi"><div class="v" id="k-falta">–</div><div class="l">Lotes com código faltando</div></div>
   </div>
 
   <section id="sec-pendentes" style="display:none;border-color:#ffcc00">
@@ -71,6 +73,11 @@
     <section><h2>Uso por pessoa</h2><div id="t-usuario"></div></section>
     <section><h2>Uso por robô</h2><div id="t-robo"></div></section>
   </div>
+  <section>
+    <h2>🔍 Conferência dos lançamentos <span id="conf-resumo" style="font-size:12px;color:#aaa;font-weight:normal"></span></h2>
+    <label style="color:#aaa;font-size:13px"><input type="checkbox" id="so-falta" onchange="desenharLotes()"> mostrar só lotes com código faltando</label>
+    <div id="t-lotes" style="margin-top:8px"></div>
+  </section>
   <section><h2>Uso por unidade</h2><div id="t-unidade"></div></section>
   <section><h2>Quem usou qual robô</h2><div id="t-usuario-robo"></div></section>
   <section><h2>Uso por dia</h2><div id="t-dia"></div></section>
@@ -135,8 +142,14 @@ const nomesEvento = {
 async function carregar() {
   try {
     const d = await window.centralRpc('admin_relatorio', { ...base(), p_inicio: $('ini').value, p_fim: $('fim').value });
-    ['por_usuario', 'por_usuario_robo', 'por_robo', 'por_dia', 'sessoes_ativas', 'eventos', 'por_unidade'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+    ['por_usuario', 'por_usuario_robo', 'por_robo', 'por_dia', 'sessoes_ativas', 'eventos', 'por_unidade', 'lotes'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
+    const rl = d.resumo_lotes || { lotes: 0, pedidos: 0, encontrados: 0, com_falta: 0 };
+    $('k-codigos').textContent = Number(rl.encontrados).toLocaleString('pt-BR');
+    $('k-falta').textContent = rl.com_falta;
+    $('k-falta').style.color = rl.com_falta ? '#ffcc66' : '';
+    $('conf-resumo').textContent = rl.lotes ? `${rl.lotes} lotes · ${rl.encontrados} de ${rl.pedidos} códigos encontrados na tela` : '';
     ultimo = d;
+    desenharLotes();
     const total = d.por_usuario.reduce((a, l) => a + l.total, 0);
     $('k-total').textContent = total.toLocaleString('pt-BR');
     $('k-usuarios').textContent = d.por_usuario.length;
@@ -169,6 +182,17 @@ async function carregar() {
     aviso(e.message, true);
     if (/sessão|login|expirou|administrador/i.test(e.message)) setTimeout(() => location.href = 'index.html', 1500);
   }
+}
+
+function desenharLotes() {
+  if (!ultimo) return;
+  const lista = $('so-falta').checked ? ultimo.lotes.filter(l => l.pedidos > l.encontrados) : ultimo.lotes;
+  $('t-lotes').innerHTML = tabela(lista, [
+    { t: 'Quando', f: l => dataHora(l.criado_em) }, { t: 'Pessoa', k: 'nome' }, { t: 'Unidade', f: l => esc(l.unidade || '—') }, { t: 'Robô', k: 'robo' },
+    { t: 'Resultado', f: l => l.pedidos > l.encontrados
+        ? `<span class="tag amarelo">⚠️ ${l.encontrados} de ${l.pedidos}</span>`
+        : `<span class="tag verde">✅ ${l.encontrados} de ${l.pedidos}</span>` },
+    { t: 'Faltaram', f: l => (l.faltando && l.faltando.length) ? `<span style="font-family:monospace;color:#ffcc66">${esc(l.faltando.join(' '))}</span>` : '' }]);
 }
 
 async function carregarUsuarios() {
