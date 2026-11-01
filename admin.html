@@ -62,10 +62,16 @@
     <div class="kpi"><div class="v" id="k-online">–</div><div class="l">Logados agora</div></div>
   </div>
 
+  <section id="sec-pendentes" style="display:none;border-color:#ffcc00">
+    <h2 style="color:#ffcc00">🔔 Aguardando aprovação <span id="n-pendentes" class="tag amarelo"></span></h2>
+    <div id="t-pendentes"></div>
+  </section>
+
   <div class="grade">
     <section><h2>Uso por pessoa</h2><div id="t-usuario"></div></section>
     <section><h2>Uso por robô</h2><div id="t-robo"></div></section>
   </div>
+  <section><h2>Uso por unidade</h2><div id="t-unidade"></div></section>
   <section><h2>Quem usou qual robô</h2><div id="t-usuario-robo"></div></section>
   <section><h2>Uso por dia</h2><div id="t-dia"></div></section>
   <section><h2>Logados hoje</h2><div id="t-sessoes"></div></section>
@@ -74,6 +80,7 @@
     <div class="novo">
       <input id="n-login" placeholder="login (ex.: maria)">
       <input id="n-nome" placeholder="Nome completo">
+      <input id="n-unidade" placeholder="Unidade">
       <input id="n-senha" placeholder="Senha provisória (mín. 6)">
       <label style="display:flex;align-items:center;gap:5px;color:#aaa"><input type="checkbox" id="n-admin"> admin</label>
       <button onclick="criarUsuario()">+ Criar usuário</button>
@@ -112,6 +119,7 @@ const hojeISO = (delta = 0) => { const d = new Date(); d.setDate(d.getDate() - d
 function aviso(t, erro) { const m = $('msg'); m.textContent = t; m.style.background = erro ? '#c0392b' : '#2d7dff'; m.style.display = 'block'; clearTimeout(m._t); m._t = setTimeout(() => m.style.display = 'none', 4000); }
 
 function tabela(linhas, colunas, barraCol) {
+  if (!Array.isArray(linhas)) return '<div class="vazio">⚠️ Dados indisponíveis: atualize o banco no Supabase.</div>';
   if (!linhas.length) return '<div class="vazio">Nenhum registro no período.</div>';
   const max = barraCol ? Math.max(...linhas.map(l => l[barraCol])) : 0;
   return '<table><tr>' + colunas.map(c => `<th class="${c.n ? 'n' : ''}">${c.t}</th>`).join('') + (barraCol ? '<th style="width:30%"></th>' : '') + '</tr>' +
@@ -121,12 +129,13 @@ function tabela(linhas, colunas, barraCol) {
 
 const nomesEvento = {
   login: ['Login', 'verde'], logout: ['Saiu', ''], senha_incorreta: ['Senha errada', 'amarelo'],
-  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
+  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], cadastro_solicitado: ['Pediu cadastro', 'amarelo'], cadastro_aprovado: ['Cadastro aprovado', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
 };
 
 async function carregar() {
   try {
     const d = await window.centralRpc('admin_relatorio', { ...base(), p_inicio: $('ini').value, p_fim: $('fim').value });
+    ['por_usuario', 'por_usuario_robo', 'por_robo', 'por_dia', 'sessoes_ativas', 'eventos', 'por_unidade'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     ultimo = d;
     const total = d.por_usuario.reduce((a, l) => a + l.total, 0);
     $('k-total').textContent = total.toLocaleString('pt-BR');
@@ -134,8 +143,10 @@ async function carregar() {
     $('k-top').textContent = d.por_robo[0] ? d.por_robo[0].robo : '–';
     $('k-online').textContent = d.sessoes_ativas.length;
 
+    $('t-unidade').innerHTML = tabela(d.por_unidade, [
+      { t: 'Unidade', k: 'unidade' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Pessoas', k: 'pessoas', n: 1 }, { t: 'Último uso', f: l => dataHora(l.ultimo) }], 'total');
     $('t-usuario').innerHTML = tabela(d.por_usuario, [
-      { t: 'Pessoa', k: 'nome' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Dias', k: 'dias', n: 1 },
+      { t: 'Pessoa', k: 'nome' }, { t: 'Unidade', k: 'unidade' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Dias', k: 'dias', n: 1 },
       { t: 'Robôs', k: 'robos_diferentes', n: 1 }, { t: 'Último uso', f: l => dataHora(l.ultimo) }], 'total');
     $('t-robo').innerHTML = tabela(d.por_robo, [
       { t: 'Robô', k: 'robo' }, { t: 'Usos', k: 'total', n: 1 }, { t: 'Pessoas', k: 'usuarios', n: 1 }], 'total');
@@ -145,7 +156,7 @@ async function carregar() {
       { t: 'Dia', f: l => new Date(l.dia + 'T12:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) },
       { t: 'Usos', k: 'total', n: 1 }, { t: 'Pessoas', k: 'usuarios', n: 1 }], 'total');
     $('t-sessoes').innerHTML = tabela(d.sessoes_ativas, [
-      { t: 'Pessoa', k: 'nome' }, { t: 'Computador', k: 'navegador' }, { t: 'Entrou', f: l => dataHora(l.criado_em) },
+      { t: 'Pessoa', k: 'nome' }, { t: 'Unidade', k: 'unidade' }, { t: 'Computador', k: 'navegador' }, { t: 'Entrou', f: l => dataHora(l.criado_em) },
       { t: 'Último uso', f: l => dataHora(l.ultimo_uso) },
       { t: '', f: l => `<button class="mini perigo" onclick="derrubar('${l.usuario_id}', '${esc(l.nome)}')">Encerrar sessão</button>` }]);
     $('t-eventos').innerHTML = tabela(d.eventos, [
@@ -161,13 +172,23 @@ async function carregar() {
 }
 
 async function carregarUsuarios() {
-  const us = await window.centralRpc('admin_listar_usuarios', base());
+  const todos = (await window.centralRpc('admin_listar_usuarios', base())) || [];
+  todos.forEach(u => { if (u.aprovado === undefined) u.aprovado = true; });
+  const pend = todos.filter(u => !u.aprovado);
+  const us = todos.filter(u => u.aprovado);
+  $('sec-pendentes').style.display = pend.length ? 'block' : 'none';
+  $('n-pendentes').textContent = pend.length;
+  $('t-pendentes').innerHTML = tabela(pend, [
+    { t: 'Nome', k: 'nome' }, { t: 'Unidade', k: 'unidade' }, { t: 'Usuário', k: 'login' }, { t: 'Pediu em', f: u => dataHora(u.criado_em) },
+    { t: '', f: u => `<button class="mini" onclick="aprovar('${u.id}', true, '${esc(u.nome)}')">✅ Aprovar</button> ` +
+                     `<button class="mini perigo" onclick="aprovar('${u.id}', false, '${esc(u.nome)}')">❌ Recusar</button>` }]);
   $('t-usuarios').innerHTML = tabela(us, [
-    { t: 'Nome', k: 'nome' }, { t: 'Login', k: 'login' },
+    { t: 'Nome', k: 'nome' }, { t: 'Unidade', f: u => esc(u.unidade || '—') }, { t: 'Login', k: 'login' },
     { t: 'Situação', f: u => (u.ativo ? '<span class="tag verde">Ativo</span>' : '<span class="tag vermelho">Desativado</span>') +
                            (u.admin ? ' <span class="tag">admin</span>' : '') + (u.bloqueado ? ' <span class="tag amarelo">bloqueado por senha errada</span>' : '') +
                            (u.trocar_senha ? ' <span class="tag amarelo">ainda não criou a senha</span>' : '') },
-    { t: '', f: u => `<button class="mini sec" onclick="trocarSenha('${u.id}', '${esc(u.nome)}')">Nova senha</button> ` +
+    { t: '', f: u => `<button class="mini sec" onclick="mudarUnidade('${u.id}', '${esc(u.nome)}', '${esc(u.unidade || '')}')">Unidade</button> ` +
+                     `<button class="mini sec" onclick="trocarSenha('${u.id}', '${esc(u.nome)}')">Nova senha</button> ` +
                      `<button class="mini ${u.ativo ? 'perigo' : ''}" onclick="ativar('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>` }]);
 }
 
@@ -209,17 +230,26 @@ async function ativarVersao(canal, versao) {
 async function acao(fn, args, ok) {
   try { await window.centralRpc(fn, { ...base(), ...args }); aviso(ok); carregar(); } catch (e) { aviso(e.message, true); }
 }
+function mudarUnidade(id, nome, atual) {
+  const u = prompt(`Unidade de ${nome}:`, atual);
+  if (u !== null) acao('admin_definir_unidade', { p_usuario_id: id, p_unidade: u }, 'Unidade atualizada.');
+}
+function aprovar(id, sim, nome) {
+  if (!sim && !confirm(`Recusar o cadastro de ${nome}? O pedido será apagado.`)) return;
+  acao('admin_aprovar_usuario', { p_usuario_id: id, p_aprovar: sim }, sim ? `${nome} aprovado(a). Já pode entrar.` : 'Cadastro recusado.');
+}
 function derrubar(id, nome) { if (confirm(`Encerrar a sessão de ${nome}? A pessoa precisará logar de novo.`)) acao('admin_derrubar_sessao', { p_usuario_id: id }, 'Sessão encerrada.'); }
 function ativar(id, ativo) { acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: ativo, p_nova_senha: null }, ativo ? 'Usuário reativado.' : 'Usuário desativado.'); }
 function trocarSenha(id, nome) { const s = prompt(`Senha provisória para ${nome} (mín. 6 caracteres).\nNo próximo acesso a pessoa vai criar a própria senha:`); if (s) acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: null, p_nova_senha: s }, 'Senha provisória definida. A pessoa cria a dela no próximo acesso.'); }
 async function criarUsuario() {
-  await acao('admin_criar_usuario', { p_login: $('n-login').value, p_nome: $('n-nome').value, p_senha: $('n-senha').value, p_admin: $('n-admin').checked }, 'Usuário criado. No primeiro acesso a pessoa vai criar a própria senha.');
-  ['n-login', 'n-nome', 'n-senha'].forEach(i => $(i).value = ''); $('n-admin').checked = false;
+  await acao('admin_criar_usuario', { p_login: $('n-login').value, p_nome: $('n-nome').value, p_senha: $('n-senha').value, p_admin: $('n-admin').checked, p_unidade: $('n-unidade').value }, 'Usuário criado. No primeiro acesso a pessoa vai criar a própria senha.');
+  ['n-login', 'n-nome', 'n-unidade', 'n-senha'].forEach(i => $(i).value = ''); $('n-admin').checked = false;
 }
 
 function exportarCsv() {
   if (!ultimo) return;
-  const linhas = [['Pessoa', 'Robô', 'Usos', 'Último uso']].concat(ultimo.por_usuario_robo.map(l => [l.nome, l.robo, l.total, dataHora(l.ultimo)]));
+  const unid = {}; ultimo.por_usuario.forEach(u => unid[u.nome] = u.unidade || '');
+  const linhas = [['Pessoa', 'Unidade', 'Robô', 'Usos', 'Último uso']].concat(ultimo.por_usuario_robo.map(l => [l.nome, unid[l.nome] || '', l.robo, l.total, dataHora(l.ultimo)]));
   const csv = '﻿' + linhas.map(l => l.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
