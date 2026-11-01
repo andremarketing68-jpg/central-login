@@ -131,9 +131,10 @@
         }
       }
       try {
-        const r = await fetch(cfg.CODIGO_URL + '?v=' + Date.now());
-        if (!r.ok) throw new Error('arquivo dos robôs não encontrado (' + r.status + ')');
-        const codigo = await r.text();
+        // código protegido: só sai do servidor para quem tem login válido
+        const rc = await window.centralRpc('obter_codigo', { p_token: dados.token, p_dispositivo: dados.dispositivo, p_canal: cfg.CANAL_PONTE || 'teste' });
+        if (!rc.ok || !rc.codigo) throw new Error(rc.erro || 'código dos robôs indisponível');
+        const codigo = rc.codigo;
         pedido.fonte.postMessage({ tipo: 'ponte-codigo', codigo, sessao: dados }, pedido.origem);
       } catch (e) {
         entregue = false;

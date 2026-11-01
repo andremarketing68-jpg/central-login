@@ -80,6 +80,20 @@
     </div>
     <div id="t-usuarios"></div>
   </section>
+  <section>
+    <h2>📦 Versões dos robôs</h2>
+    <div style="color:#aaa;font-size:13px;margin-bottom:10px">
+      Escolha o arquivo da Central (o .js com os robôs) e publique. <b>Teste</b> = só quem usa o favorito de teste;
+      <b>Produção</b> = todo mundo. Se algo der errado, clique em <b>Usar esta</b> numa versão anterior.
+    </div>
+    <div class="novo">
+      <input type="file" id="v-arquivo" accept=".js,.txt">
+      <select id="v-canal"><option value="teste">Teste</option><option value="producao">Produção (todos)</option></select>
+      <button onclick="publicar()">⬆ Publicar</button>
+    </div>
+    <div id="t-versoes"></div>
+  </section>
+
   <section><h2>Eventos (logins, bloqueios, saídas)</h2><div id="t-eventos"></div></section>
 </main>
 <div id="msg"></div>
@@ -107,7 +121,7 @@ function tabela(linhas, colunas, barraCol) {
 
 const nomesEvento = {
   login: ['Login', 'verde'], logout: ['Saiu', ''], senha_incorreta: ['Senha errada', 'amarelo'],
-  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
+  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
 };
 
 async function carregar() {
@@ -139,6 +153,7 @@ async function carregar() {
       { t: 'O quê', f: l => { const e = nomesEvento[l.tipo] || [l.tipo, '']; return `<span class="tag ${e[1]}">${esc(e[0])}</span>`; } },
       { t: 'Detalhe', k: 'detalhe' }]);
     await carregarUsuarios();
+    carregarVersoes();
   } catch (e) {
     aviso(e.message, true);
     if (/sessão|login|expirou|administrador/i.test(e.message)) setTimeout(() => location.href = 'index.html', 1500);
@@ -154,6 +169,41 @@ async function carregarUsuarios() {
                            (u.trocar_senha ? ' <span class="tag amarelo">ainda não criou a senha</span>' : '') },
     { t: '', f: u => `<button class="mini sec" onclick="trocarSenha('${u.id}', '${esc(u.nome)}')">Nova senha</button> ` +
                      `<button class="mini ${u.ativo ? 'perigo' : ''}" onclick="ativar('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>` }]);
+}
+
+async function carregarVersoes() {
+  try {
+    const vs = await window.centralRpc('admin_listar_versoes', base());
+    $('t-versoes').innerHTML = tabela(vs, [
+      { t: 'Canal', f: v => v.canal === 'producao' ? '<span class="tag verde">Produção</span>' : '<span class="tag amarelo">Teste</span>' },
+      { t: 'Versão', f: v => 'v' + v.versao + (v.ativo ? ' <span class="tag verde">em uso</span>' : '') },
+      { t: 'Publicada', f: v => dataHora(v.publicado_em) }, { t: 'Por', k: 'publicado_por' },
+      { t: 'Tamanho', f: v => Math.round(v.tamanho / 1024) + ' KB', n: 1 },
+      { t: '', f: v => v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button>` }]);
+  } catch (e) { $('t-versoes').innerHTML = '<div class="vazio">⚠️ ' + esc(e.message) + '</div>'; }
+}
+async function publicar() {
+  const f = $('v-arquivo').files[0];
+  if (!f) return aviso('Escolha o arquivo da Central primeiro.', true);
+  const codigo = await f.text();
+  const canal = $('v-canal').value;
+  // conferências para não publicar o arquivo errado
+  if (!codigo.includes('menu-central-robos') || !codigo.includes('const robos')) return aviso('Esse arquivo não parece ser a Central com os robôs (talvez seja o carregador?). Nada foi publicado.', true);
+  if (codigo.includes('SEU-PROJETO.supabase.co') || codigo.includes('COLE-AQUI-A-CHAVE')) return aviso('Esse arquivo está sem o endereço/chave do Supabase preenchidos. Nada foi publicado.', true);
+  try { new Function(codigo); } catch (e) { return aviso('O arquivo tem um erro de digitação no código (' + e.message + '). Nada foi publicado.', true); }
+  const nome = canal === 'producao' ? 'PRODUÇÃO (todos os usuários)' : 'TESTE';
+  if (!confirm(`Publicar "${f.name}" (${Math.round(codigo.length / 1024)} KB) no canal ${nome}?`)) return;
+  try {
+    const r = await window.centralRpc('admin_publicar_codigo', { ...base(), p_canal: canal, p_codigo: codigo });
+    aviso(`Publicado! ${nome}: versão ${r.versao}. Vale a partir do próximo clique no favorito.`);
+    $('v-arquivo').value = '';
+    carregarVersoes();
+  } catch (e) { aviso(e.message, true); }
+}
+async function ativarVersao(canal, versao) {
+  if (!confirm(`Usar a versão ${versao} no canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?`)) return;
+  try { await window.centralRpc('admin_ativar_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' em uso.'); carregarVersoes(); }
+  catch (e) { aviso(e.message, true); }
 }
 
 async function acao(fn, args, ok) {
