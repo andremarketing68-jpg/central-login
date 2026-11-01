@@ -42,7 +42,34 @@
     <input id="senha" name="password" type="password" autocomplete="current-password" required>
     <button id="entrar" type="submit">Entrar</button>
     <div class="erro" id="erro"></div>
+    <div style="text-align:center;margin-top:16px;font-size:13px;color:#aaa">Não tem conta? <a href="#" id="ir-cadastro">Criar conta</a></div>
   </form>
+
+  <form id="form-cadastro" class="oculto" autocomplete="on">
+    <p style="margin:0 0 6px;font-weight:bold;text-align:center;color:#8fb6ff">📝 Criar conta</p>
+    <p style="margin:0 0 6px;font-size:13px;color:#aaa;text-align:center">Depois de enviar, o administrador precisa aprovar seu acesso.</p>
+    <label for="c-nome">Nome completo</label>
+    <input id="c-nome" autocomplete="name" required>
+    <label for="c-unidade">Unidade em que você trabalha</label>
+    <input id="c-unidade" list="lista-unidades" autocomplete="off" required placeholder="Comece a digitar e escolha na lista">
+    <datalist id="lista-unidades"></datalist>
+    <label for="c-login">Usuário (para entrar)</label>
+    <input id="c-login" autocomplete="username" required placeholder="ex.: maria.souza">
+    <div style="font-size:11px;color:#888;margin-top:4px">Letras minúsculas, números, ponto ou traço. Sem espaços e sem acentos.</div>
+    <label for="c-senha">Senha (mínimo 6 caracteres)</label>
+    <input id="c-senha" type="password" autocomplete="new-password" required minlength="6">
+    <label for="c-conf">Repita a senha</label>
+    <input id="c-conf" type="password" autocomplete="new-password" required>
+    <button id="c-enviar" type="submit">Enviar cadastro</button>
+    <button id="c-voltar" type="button" class="cinza">Voltar ao login</button>
+    <div class="erro" id="erro-cadastro"></div>
+  </form>
+
+  <div id="cadastro-ok" class="oculto ok">
+    <div style="font-size:15px">✅ <strong>Cadastro enviado!</strong></div>
+    <div style="color:#aaa;font-size:13px;margin-top:8px">Agora é só aguardar o administrador aprovar. Depois disso, entre com o usuário <b id="c-usuario-criado" style="color:#fff"></b> e a senha que você escolheu.</div>
+    <button id="c-ir-login" type="button">Ir para o login</button>
+  </div>
 
   <form id="form-senha" class="oculto">
     <p id="senha-titulo" style="margin:0 0 6px;font-weight:bold;text-align:center;color:#ffcc00">🔑 Crie sua senha</p>
@@ -84,6 +111,8 @@
   function mostrar(qual) {
     $('form').classList.toggle('oculto', qual !== 'form');
     $('form-senha').classList.toggle('oculto', qual !== 'senha');
+    $('form-cadastro').classList.toggle('oculto', qual !== 'cadastro');
+    $('cadastro-ok').classList.toggle('oculto', qual !== 'cadastro-ok');
     $('logado').classList.toggle('oculto', qual !== 'logado');
   }
   function erro(msg) { $('erro').textContent = msg; $('erro').style.display = msg ? 'block' : 'none'; }
@@ -200,6 +229,42 @@
   });
   $('s-cancelar').addEventListener('click', () => logado($('form-senha')._sessao));
   $('trocar').addEventListener('click', () => pedirNovaSenha(sessao, false, null));
+
+  // Autocadastro (fica aguardando aprovação do administrador)
+  $('ir-cadastro').addEventListener('click', (e) => {
+    e.preventDefault(); erro(''); $('sub').textContent = 'Preencha seus dados.'; mostrar('cadastro'); $('c-nome').focus();
+    // sugere as unidades já cadastradas, para todo mundo escrever igual
+    window.centralRpc('listar_unidades', {}).then((lista) => {
+      $('lista-unidades').innerHTML = '';
+      (lista || []).forEach((u) => { const o = document.createElement('option'); o.value = u; $('lista-unidades').appendChild(o); });
+    }).catch(() => {});
+  });
+  $('c-voltar').addEventListener('click', () => { $('sub').textContent = 'Faça login para usar os robôs.'; mostrar('form'); });
+  $('c-ir-login').addEventListener('click', () => { $('sub').textContent = 'Faça login para usar os robôs.'; $('login').value = $('c-usuario-criado').textContent; mostrar('form'); });
+  $('c-login').addEventListener('input', function () {
+    // ajuda: minúsculas, sem acentos e sem espaços
+    const limpo = this.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '.');
+    if (limpo !== this.value) this.value = limpo;
+  });
+  $('form-cadastro').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const erroC = (m) => { $('erro-cadastro').textContent = m; $('erro-cadastro').style.display = m ? 'block' : 'none'; };
+    erroC('');
+    if ($('c-senha').value !== $('c-conf').value) return erroC('As duas senhas não são iguais.');
+    $('c-enviar').disabled = true;
+    try {
+      const r = await window.centralRpc('criar_conta', { p_login: $('c-login').value, p_nome: $('c-nome').value, p_senha: $('c-senha').value, p_unidade: $('c-unidade').value });
+      if (!r.ok) return erroC(r.erro);
+      $('c-usuario-criado').textContent = $('c-login').value.trim().toLowerCase();
+      ['c-nome', 'c-unidade', 'c-login', 'c-senha', 'c-conf'].forEach(i => $(i).value = '');
+      $('sub').textContent = '';
+      mostrar('cadastro-ok');
+    } catch (e) {
+      erroC('Não foi possível conectar ao servidor. (' + e.message + ')');
+    } finally {
+      $('c-enviar').disabled = false;
+    }
+  });
 
   // O portal (janela que abriu esta) pede o login por mensagem
   window.addEventListener('message', (ev) => {
