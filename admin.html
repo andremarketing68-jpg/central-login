@@ -63,24 +63,8 @@
   </div>
 
   <section id="sec-economia" style="border-color:#27ae60">
-    <h2 style="color:#7ee2a0">⏱ Tempo economizado pelos robôs <span style="font-size:12px;color:#999;font-weight:400">no período escolhido</span></h2>
-    <div class="kpis" style="margin-bottom:12px">
-      <div class="kpi"><div class="v" id="e-itens">–</div><div class="l">Códigos lançados pelos robôs</div></div>
-      <div class="kpi"><div class="v" id="e-horas" style="color:#7ee2a0">–</div><div class="l">Horas de trabalho economizadas</div></div>
-      <div class="kpi"><div class="v" id="e-valor">–</div><div class="l">Valor economizado (R$)</div></div>
-      <div class="kpi"><div class="v" id="e-robo">–</div><div class="l">Tempo dos robôs rodando</div></div>
-    </div>
-    <div class="novo" style="align-items:center;color:#aaa">
-      Lançamento manual: <input id="e-manual" type="number" min="1" style="width:80px"> segundos por código
-      <span id="e-origem" class="tag"></span>
-      <span style="margin-left:12px">Custo da hora do atendente: R$</span> <input id="e-custo" type="number" min="0" step="0.01" style="width:90px" placeholder="ex.: 25">
-      <button class="mini" onclick="salvarParametros()">Recalcular</button>
-    </div>
-    <div style="color:#888;font-size:12px;margin-bottom:10px">Economia = códigos × tempo manual por código − tempo do robô rodando. O tempo manual vem das medições feitas com o botão <b>⏱ Medir lançamento manual</b> da Central (todas as medições, de todas as datas).</div>
-    <div class="grade">
-      <div><h2 style="font-size:13px">Por robô</h2><div id="t-econ-robo"></div></div>
-      <div><h2 style="font-size:13px">Por pessoa</h2><div id="t-econ-pessoa"></div></div>
-    </div>
+    <h2 style="color:#7ee2a0">🤖 Códigos lançados pelos robôs</h2>
+    <div id="t-econ-robo"></div>
   </section>
 
   <section id="sec-pendentes" style="display:none;border-color:#ffcc00">
@@ -193,47 +177,15 @@ async function carregar() {
   }
 }
 
-const duracao = (seg) => { seg = Math.max(0, Math.round(seg)); const h = Math.floor(seg / 3600), m = Math.floor(seg % 3600 / 60), s = seg % 60;
-  return h ? `${h}h ${String(m).padStart(2, '0')}min` : m ? `${m}min ${String(s).padStart(2, '0')}s` : `${s}s`; };
-const reais = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-function lerParametros() { try { return JSON.parse(localStorage.getItem('central_parametros_economia') || '{}'); } catch (e) { return {}; } }
-function salvarParametros() {
-  const p = lerParametros();
-  const m = parseFloat($('e-manual').value), c = parseFloat($('e-custo').value);
-  p.manual = m > 0 && m !== p.medido ? m : null;   // se igual ao medido, volta a usar o medido
-  p.custo = c >= 0 ? c : null;
-  localStorage.setItem('central_parametros_economia', JSON.stringify(p));
-  mostrarEconomia();
-}
 function mostrarEconomia() {
   const d = ultimo; if (!d) return;
   if (!Array.isArray(d.medicao_robos)) {
-    $('t-econ-robo').innerHTML = '<div class="vazio">⚠️ Atualize o banco no Supabase (ATUALIZAR-BANCO-V7.sql) para ver a economia.</div>';
-    $('t-econ-pessoa').innerHTML = ''; return;
+    $('t-econ-robo').innerHTML = '<div class="vazio">⚠️ Atualize o banco no Supabase (ATUALIZAR-BANCO-V7.sql) para ver os códigos lançados.</div>';
+    return;
   }
-  const p = lerParametros(), mm = d.medicao_manual || { medicoes: 0, codigos: 0, segundos: 0 };
-  const medido = mm.codigos > 0 ? Math.round(mm.segundos / mm.codigos) : null;
-  p.medido = medido; localStorage.setItem('central_parametros_economia', JSON.stringify(p));
-  const manual = p.manual || medido || 60;
-  $('e-manual').value = manual;
-  $('e-origem').textContent = p.manual ? 'valor digitado por você' : medido ? `medido: ${mm.medicoes} medição(ões), ${mm.codigos} códigos` : 'estimativa — meça com o cronômetro';
-  $('e-origem').className = 'tag ' + (p.manual ? 'amarelo' : medido ? 'verde' : 'amarelo');
-  if (p.custo != null) $('e-custo').value = p.custo;
-  const econ = (l) => Math.max(0, l.itens * manual - l.segundos);
-  const rob = d.medicao_robos.map(l => ({ ...l, economia: econ(l) })).sort((a, b) => b.economia - a.economia);
-  const itens = rob.reduce((a, l) => a + l.itens, 0), segRobo = rob.reduce((a, l) => a + l.segundos, 0), segEcon = rob.reduce((a, l) => a + l.economia, 0);
-  $('e-itens').textContent = itens.toLocaleString('pt-BR');
-  $('e-horas').textContent = (segEcon / 3600).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' h';
-  $('e-valor').textContent = p.custo ? reais(segEcon / 3600 * p.custo) : '—';
-  $('e-robo').textContent = duracao(segRobo);
-  $('t-econ-robo').innerHTML = tabela(rob, [
+  $('t-econ-robo').innerHTML = tabela(d.medicao_robos, [
     { t: 'Robô', k: 'robo' }, { t: 'Execuções', k: 'lotes', n: 1 }, { t: 'Códigos', k: 'itens', n: 1 },
-    { t: 'Robô leva', f: l => (l.itens ? Math.round(l.segundos / l.itens) : 0) + ' s/cód', n: 1 },
-    { t: 'Economia', f: l => duracao(l.economia), n: 1 }], 'economia');
-  const pes = (d.medicao_pessoas || []).map(l => ({ ...l, itens: l.itens ?? l.codigos }));
-  $('t-econ-pessoa').innerHTML = tabela(pes, [
-    { t: 'Pessoa', k: 'nome' }, { t: 'Unidade', f: l => esc(l.unidade || '—') }, { t: 'Execuções', k: 'lotes', n: 1 }, { t: 'Códigos', k: 'itens', n: 1 },
-    { t: 'Economia', f: l => duracao(Math.max(0, l.itens * manual - (l.segundos || 0))), n: 1 }], 'itens');
+    { t: 'Robô leva', f: l => (l.itens ? Math.round(l.segundos / l.itens) : 0) + ' s/cód', n: 1 }], 'itens');
 }
 
 async function carregarUsuarios() {
