@@ -177,6 +177,7 @@ async function carregar() {
   }
 }
 
+const total = (seg) => { const m = Math.floor(seg / 60), x = seg % 60; return m ? m + 'min ' + String(x).padStart(2, '0') + 's' : x + 's'; };
 function mostrarEconomia() {
   const d = ultimo; if (!d) return;
   if (!Array.isArray(d.medicao_robos)) {
@@ -185,7 +186,7 @@ function mostrarEconomia() {
   }
   $('t-econ-robo').innerHTML = tabela(d.medicao_robos, [
     { t: 'Robô', k: 'robo' }, { t: 'Execuções', k: 'lotes', n: 1 }, { t: 'Códigos', k: 'itens', n: 1 },
-    { t: 'Robô leva', f: l => (l.itens ? Math.round(l.segundos / l.itens) : 0) + ' s/cód', n: 1 }], 'itens');
+    { t: 'Robô leva', f: l => (l.itens ? (l.segundos / l.itens).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : 0) + ' s/cód <span style="color:#888">(' + total(l.segundos) + ' no total)</span>', n: 1 }], 'itens');
 }
 
 async function carregarUsuarios() {
