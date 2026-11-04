@@ -49,7 +49,7 @@
     <p style="margin:0 0 6px;font-weight:bold;text-align:center;color:#8fb6ff">📝 Criar conta</p>
     <p style="margin:0 0 6px;font-size:13px;color:#aaa;text-align:center">Depois de enviar, o administrador precisa aprovar seu acesso.</p>
     <label for="c-nome">Nome completo</label>
-    <input id="c-nome" autocomplete="name" required>
+    <input id="c-nome" autocomplete="name" required style="text-transform:uppercase">
     <label for="c-unidade">Unidade em que você trabalha</label>
     <input id="c-unidade" list="lista-unidades" autocomplete="off" required placeholder="Comece a digitar e escolha na lista">
     <datalist id="lista-unidades"></datalist>
@@ -241,6 +241,10 @@
   });
   $('c-voltar').addEventListener('click', () => { $('sub').textContent = 'Faça login para usar os robôs.'; mostrar('form'); });
   $('c-ir-login').addEventListener('click', () => { $('sub').textContent = 'Faça login para usar os robôs.'; $('login').value = $('c-usuario-criado').textContent; mostrar('form'); });
+  $('c-nome').addEventListener('input', function () {
+    const pos = this.selectionStart, maiusculo = this.value.toLocaleUpperCase('pt-BR');
+    if (maiusculo !== this.value) { this.value = maiusculo; try { this.setSelectionRange(pos, pos); } catch (e) {} }
+  });
   $('c-login').addEventListener('input', function () {
     const limpo = this.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, '.');
     if (limpo !== this.value) this.value = limpo;
@@ -252,7 +256,7 @@
     if ($('c-senha').value !== $('c-conf').value) return erroC('As duas senhas não são iguais.');
     $('c-enviar').disabled = true;
     try {
-      const r = await window.centralRpc('criar_conta', { p_login: $('c-login').value, p_nome: $('c-nome').value, p_senha: $('c-senha').value, p_unidade: $('c-unidade').value });
+      const r = await window.centralRpc('criar_conta', { p_login: $('c-login').value, p_nome: $('c-nome').value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR'), p_senha: $('c-senha').value, p_unidade: $('c-unidade').value });
       if (!r.ok) return erroC(r.erro);
       $('c-usuario-criado').textContent = $('c-login').value.trim().toLowerCase();
       ['c-nome', 'c-unidade', 'c-login', 'c-senha', 'c-conf'].forEach(i => $(i).value = '');
