@@ -51,7 +51,7 @@
     <label for="c-nome">Nome completo</label>
     <input id="c-nome" autocomplete="name" required style="text-transform:uppercase">
     <label for="c-unidade">Unidade em que você trabalha</label>
-    <input id="c-unidade" list="lista-unidades" autocomplete="off" required placeholder="Comece a digitar e escolha na lista">
+    <input id="c-unidade" list="lista-unidades" autocomplete="off" required placeholder="Comece a digitar e escolha na lista" style="text-transform:uppercase">
     <datalist id="lista-unidades"></datalist>
     <label for="c-login">Usuário (para entrar)</label>
     <input id="c-login" autocomplete="username" required placeholder="ex.: maria.souza">
@@ -256,7 +256,7 @@
     if ($('c-senha').value !== $('c-conf').value) return erroC('As duas senhas não são iguais.');
     $('c-enviar').disabled = true;
     try {
-      const r = await window.centralRpc('criar_conta', { p_login: $('c-login').value, p_nome: $('c-nome').value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR'), p_senha: $('c-senha').value, p_unidade: $('c-unidade').value });
+      const r = await window.centralRpc('criar_conta', { p_login: $('c-login').value, p_nome: $('c-nome').value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR'), p_senha: $('c-senha').value, p_unidade: (v => (v || '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))($('c-unidade').value) });
       if (!r.ok) return erroC(r.erro);
       $('c-usuario-criado').textContent = $('c-login').value.trim().toLowerCase();
       ['c-nome', 'c-unidade', 'c-login', 'c-senha', 'c-conf'].forEach(i => $(i).value = '');

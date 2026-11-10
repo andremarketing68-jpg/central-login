@@ -91,7 +91,7 @@
     <div class="novo">
       <input id="n-login" placeholder="login (ex.: maria)">
       <input id="n-nome" placeholder="Nome completo" style="text-transform:uppercase">
-      <input id="n-unidade" placeholder="Unidade">
+      <input id="n-unidade" placeholder="Unidade" style="text-transform:uppercase">
       <input id="n-senha" placeholder="Senha provisória (mín. 6)">
       <label style="display:flex;align-items:center;gap:5px;color:#aaa"><input type="checkbox" id="n-admin"> admin</label>
       <button onclick="criarUsuario()">+ Criar usuário</button>
@@ -207,7 +207,7 @@ async function carregarUsuarios() {
     { t: '', f: u => `<button class="mini" onclick="aprovar('${u.id}', true, '${esc(u.nome)}')">✅ Aprovar</button> ` +
                      `<button class="mini perigo" onclick="aprovar('${u.id}', false, '${esc(u.nome)}')">❌ Recusar</button>` }]);
   const grupos = {};
-  us.forEach(u => { const k = (u.unidade || '').trim() || 'Sem unidade'; (grupos[k] = grupos[k] || []).push(u); });
+  us.forEach(u => { const k = padUnidade(u.unidade) || 'Sem unidade'; (grupos[k] = grupos[k] || []).push(u); });
   const nomesGrupos = Object.keys(grupos).sort((a, b) => a === 'Sem unidade' ? 1 : b === 'Sem unidade' ? -1 : a.localeCompare(b, 'pt-BR'));
   const abertos = new Set([...document.querySelectorAll('#t-usuarios details[open]')].map(d => d.dataset.unidade));
   $('t-usuarios').innerHTML = nomesGrupos.length ? nomesGrupos.map(g => {
@@ -217,6 +217,7 @@ async function carregarUsuarios() {
       tabelaUsuarios(lista) + '</details>';
   }).join('') : '<div class="vazio">Nenhum usuário.</div>';
 }
+function padUnidade(v) { return (v => (v || '').trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, ''))(v); }
 function tabelaUsuarios(us) {
   return tabela(us, [
     { t: 'Nome', k: 'nome' }, { t: 'Login', k: 'login' },
@@ -275,7 +276,7 @@ async function acao(fn, args, ok) {
 }
 function mudarUnidade(id, nome, atual) {
   const u = prompt(`Unidade de ${nome}:`, atual);
-  if (u !== null) acao('admin_definir_unidade', { p_usuario_id: id, p_unidade: u }, 'Unidade atualizada.');
+  if (u !== null) acao('admin_definir_unidade', { p_usuario_id: id, p_unidade: padUnidade(u) }, 'Unidade atualizada.');
 }
 function aprovar(id, sim, nome) {
   if (!sim && !confirm(`Recusar o cadastro de ${nome}? O pedido será apagado.`)) return;
@@ -285,7 +286,7 @@ function derrubar(id, nome) { if (confirm(`Encerrar a sessão de ${nome}? A pess
 function ativar(id, ativo) { acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: ativo, p_nova_senha: null }, ativo ? 'Usuário reativado.' : 'Usuário desativado.'); }
 function trocarSenha(id, nome) { const s = prompt(`Senha provisória para ${nome} (mín. 6 caracteres).\nNo próximo acesso a pessoa vai criar a própria senha:`); if (s) acao('admin_alterar_usuario', { p_usuario_id: id, p_ativo: null, p_nova_senha: s }, 'Senha provisória definida. A pessoa cria a dela no próximo acesso.'); }
 async function criarUsuario() {
-  await acao('admin_criar_usuario', { p_login: $('n-login').value, p_nome: $('n-nome').value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR'), p_senha: $('n-senha').value, p_admin: $('n-admin').checked, p_unidade: $('n-unidade').value }, 'Usuário criado. No primeiro acesso a pessoa vai criar a própria senha.');
+  await acao('admin_criar_usuario', { p_login: $('n-login').value, p_nome: $('n-nome').value.trim().replace(/\s+/g, ' ').toLocaleUpperCase('pt-BR'), p_senha: $('n-senha').value, p_admin: $('n-admin').checked, p_unidade: padUnidade($('n-unidade').value) }, 'Usuário criado. No primeiro acesso a pessoa vai criar a própria senha.');
   ['n-login', 'n-nome', 'n-unidade', 'n-senha'].forEach(i => $(i).value = ''); $('n-admin').checked = false;
 }
 
