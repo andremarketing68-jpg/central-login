@@ -37,6 +37,12 @@
   .novo { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   #msg { position: fixed; bottom: 20px; right: 20px; padding: 12px 16px; border-radius: 8px; background: #2d7dff;
          display: none; max-width: 360px; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  details.unidade { border: 1px solid #333; border-radius: 8px; margin-bottom: 8px; background: #1b1b1b; }
+  details.unidade > summary { cursor: pointer; padding: 10px 12px; list-style: none; user-select: none; }
+  details.unidade > summary::-webkit-details-marker { display: none; }
+  details.unidade > summary::before { content: '▸ '; color: #2d7dff; }
+  details.unidade[open] > summary::before { content: '▾ '; }
+  details.unidade > table { margin: 0 8px 8px; width: calc(100% - 16px); }
 </style>
 </head>
 <body>
@@ -134,7 +140,7 @@ function tabela(linhas, colunas, barraCol) {
 
 const nomesEvento = {
   login: ['Login', 'verde'], logout: ['Saiu', ''], senha_incorreta: ['Senha errada', 'amarelo'],
-  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], cadastro_solicitado: ['Pediu cadastro', 'amarelo'], cadastro_aprovado: ['Cadastro aprovado', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], senha_criada: ['Criou/trocou a senha', 'verde']
+  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], cadastro_solicitado: ['Pediu cadastro', 'amarelo'], cadastro_aprovado: ['Cadastro aprovado', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], versao_excluida: ['Excluiu versão', ''], senha_criada: ['Criou/trocou a senha', 'verde']
 };
 
 async function carregar() {
@@ -200,8 +206,20 @@ async function carregarUsuarios() {
     { t: 'Nome', k: 'nome' }, { t: 'Unidade', k: 'unidade' }, { t: 'Usuário', k: 'login' }, { t: 'Pediu em', f: u => dataHora(u.criado_em) },
     { t: '', f: u => `<button class="mini" onclick="aprovar('${u.id}', true, '${esc(u.nome)}')">✅ Aprovar</button> ` +
                      `<button class="mini perigo" onclick="aprovar('${u.id}', false, '${esc(u.nome)}')">❌ Recusar</button>` }]);
-  $('t-usuarios').innerHTML = tabela(us, [
-    { t: 'Nome', k: 'nome' }, { t: 'Unidade', f: u => esc(u.unidade || '—') }, { t: 'Login', k: 'login' },
+  const grupos = {};
+  us.forEach(u => { const k = (u.unidade || '').trim() || 'Sem unidade'; (grupos[k] = grupos[k] || []).push(u); });
+  const nomesGrupos = Object.keys(grupos).sort((a, b) => a === 'Sem unidade' ? 1 : b === 'Sem unidade' ? -1 : a.localeCompare(b, 'pt-BR'));
+  const abertos = new Set([...document.querySelectorAll('#t-usuarios details[open]')].map(d => d.dataset.unidade));
+  $('t-usuarios').innerHTML = nomesGrupos.length ? nomesGrupos.map(g => {
+    const lista = grupos[g].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+    const ativos = lista.filter(u => u.ativo).length;
+    return `<details class="unidade" data-unidade="${esc(g)}" ${abertos.has(g) ? 'open' : ''}><summary>📍 <b>${esc(g)}</b> <span style="color:#888">— ${lista.length} usuário(s)${ativos < lista.length ? ', ' + (lista.length - ativos) + ' desativado(s)' : ''}</span></summary>` +
+      tabelaUsuarios(lista) + '</details>';
+  }).join('') : '<div class="vazio">Nenhum usuário.</div>';
+}
+function tabelaUsuarios(us) {
+  return tabela(us, [
+    { t: 'Nome', k: 'nome' }, { t: 'Login', k: 'login' },
     { t: 'Situação', f: u => (u.ativo ? '<span class="tag verde">Ativo</span>' : '<span class="tag vermelho">Desativado</span>') +
                            (u.admin ? ' <span class="tag">admin</span>' : '') + (u.bloqueado ? ' <span class="tag amarelo">bloqueado por senha errada</span>' : '') +
                            (u.trocar_senha ? ' <span class="tag amarelo">ainda não criou a senha</span>' : '') },
@@ -218,7 +236,8 @@ async function carregarVersoes() {
       { t: 'Versão', f: v => 'v' + v.versao + (v.ativo ? ' <span class="tag verde">em uso</span>' : '') },
       { t: 'Publicada', f: v => dataHora(v.publicado_em) }, { t: 'Por', k: 'publicado_por' },
       { t: 'Tamanho', f: v => Math.round(v.tamanho / 1024) + ' KB', n: 1 },
-      { t: '', f: v => v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button>` }]);
+      { t: '', f: v => v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button> ` +
+                                       `<button class="mini perigo" onclick="excluirVersao('${v.canal}', ${v.versao})">🗑 Excluir</button>` }]);
   } catch (e) { $('t-versoes').innerHTML = '<div class="vazio">⚠️ ' + esc(e.message) + '</div>'; }
 }
 async function publicar() {
@@ -243,6 +262,12 @@ async function ativarVersao(canal, versao) {
   if (!confirm(`Usar a versão ${versao} no canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?`)) return;
   try { await window.centralRpc('admin_ativar_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' em uso.'); carregarVersoes(); }
   catch (e) { aviso(e.message, true); }
+}
+
+async function excluirVersao(canal, versao) {
+  if (!confirm(`Excluir a versão ${versao} do canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?\n\nEla some da lista e não dá para voltar para ela depois.`)) return;
+  try { await window.centralRpc('admin_excluir_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' excluída.'); carregarVersoes(); }
+  catch (e) { aviso(/admin_excluir_versao|schema cache|Could not find/i.test(e.message) ? 'Rode antes o arquivo ATUALIZAR-BANCO-V8.sql no Supabase.' : e.message, true); }
 }
 
 async function acao(fn, args, ok) {
