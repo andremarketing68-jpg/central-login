@@ -182,7 +182,9 @@
     $('sub').textContent = 'Você já pode usar os robôs hoje.';
     $('nome').textContent = s.nome;
     $('ate').textContent = horaFim(s.valido_ate);
-    $('admin').classList.toggle('oculto', !s.admin);
+    try { window.centralSessao.salvar(s); } catch (e) {}   // guarda admin/gestor atualizados para o painel
+    $('admin').classList.toggle('oculto', !(s.admin || s.gestor));
+    $('admin').textContent = s.admin ? '📊 Painel do administrador' : '📊 Painel da unidade ' + (s.unidade || '');
     mostrar('logado');
     entregar();
   }
@@ -292,7 +294,7 @@
         p_dispositivo: window.centralDispositivo(), p_navegador: window.centralNavegador()
       });
       if (!r.ok) { erro(r.erro); return; }
-      const s = { token: r.token, nome: r.nome, admin: r.admin, valido_ate: r.valido_ate, trocar_senha: r.trocar_senha };
+      const s = { token: r.token, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade, valido_ate: r.valido_ate, trocar_senha: r.trocar_senha };
       window.centralSessao.salvar(s);
       const digitada = $('senha').value;
       $('senha').value = '';
@@ -329,8 +331,8 @@
     if (s) {
       try {
         const r = await window.centralRpc('validar_sessao', { p_token: s.token, p_dispositivo: window.centralDispositivo() });
-        if (r.ok && r.trocar_senha) { pedirNovaSenha({ ...s, nome: r.nome, admin: r.admin }, true, null); return; }
-        if (r.ok) { logado({ ...s, nome: r.nome, admin: r.admin }); return; }
+        if (r.ok && r.trocar_senha) { pedirNovaSenha({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade }, true, null); return; }
+        if (r.ok) { logado({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade }); return; }
         window.centralSessao.limpar();
         erro(r.erro);
       } catch (e) {

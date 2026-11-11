@@ -43,6 +43,7 @@
   details.unidade > summary::before { content: '▸ '; color: #2d7dff; }
   details.unidade[open] > summary::before { content: '▾ '; }
   details.unidade > table { margin: 0 8px 8px; width: calc(100% - 16px); }
+  body.modo-gestor #sec-versoes, body.modo-gestor #n-unidade, body.modo-gestor .so-admin { display: none !important; }
 </style>
 </head>
 <body>
@@ -82,7 +83,7 @@
     <section><h2>Uso por pessoa</h2><div id="t-usuario"></div></section>
     <section><h2>Uso por robô</h2><div id="t-robo"></div></section>
   </div>
-  <section><h2>Uso por unidade</h2><div id="t-unidade"></div></section>
+  <section class="so-admin"><h2>Uso por unidade</h2><div id="t-unidade"></div></section>
   <section><h2>Quem usou qual robô</h2><div id="t-usuario-robo"></div></section>
   <section><h2>Uso por dia</h2><div id="t-dia"></div></section>
   <section><h2>Logados hoje</h2><div id="t-sessoes"></div></section>
@@ -93,21 +94,27 @@
       <input id="n-nome" placeholder="Nome completo" style="text-transform:uppercase">
       <input id="n-unidade" placeholder="Unidade" style="text-transform:uppercase">
       <input id="n-senha" placeholder="Senha provisória (mín. 6)">
-      <label style="display:flex;align-items:center;gap:5px;color:#aaa"><input type="checkbox" id="n-admin"> admin</label>
+      <label class="so-admin" style="display:flex;align-items:center;gap:5px;color:#aaa"><input type="checkbox" id="n-admin"> admin</label>
       <button onclick="criarUsuario()">+ Criar usuário</button>
     </div>
     <div id="t-usuarios"></div>
   </section>
-  <section>
+  <section id="sec-versoes">
     <h2>📦 Versões dos robôs</h2>
     <div style="color:#aaa;font-size:13px;margin-bottom:10px">
       Escolha o arquivo da Central (o .js com os robôs) e publique. <b>Teste</b> = só quem usa o favorito de teste;
-      <b>Produção</b> = todo mundo. Se algo der errado, clique em <b>Usar esta</b> numa versão anterior.
+      <b>Piloto</b> = só as unidades que você marcar (as outras continuam na versão atual); <b>Produção</b> = todo mundo.
+      Se algo der errado, clique em <b>Usar esta</b> numa versão anterior.
     </div>
     <div class="novo">
       <input type="file" id="v-arquivo" accept=".js,.txt">
-      <select id="v-canal"><option value="teste">Teste</option><option value="producao">Produção (todos)</option></select>
+      <select id="v-canal" onchange="mostrarPiloto()"><option value="teste">Teste</option><option value="piloto">Piloto (só algumas unidades)</option><option value="producao">Produção (todos)</option></select>
       <button onclick="publicar()">⬆ Publicar</button>
+    </div>
+    <textarea id="v-notas" rows="2" placeholder="O que mudou nesta versão? (ex.: PROASA agora espera o nome aparecer)" style="width:100%;box-sizing:border-box;margin-bottom:10px;background:#111;color:#eee;border:1px solid #444;border-radius:6px;padding:8px;font:inherit"></textarea>
+    <div id="v-unidades" style="display:none;margin-bottom:12px;padding:10px;border:1px dashed #ffcc00;border-radius:8px">
+      <div style="color:#ffcc00;margin-bottom:6px">🧪 Liberar esta versão só para:</div>
+      <div id="v-lista-unidades" style="display:flex;flex-wrap:wrap;gap:6px 16px"></div>
     </div>
     <div id="t-versoes"></div>
   </section>
@@ -120,7 +127,10 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const sessao = window.centralSessao.ler();
-if (!sessao || !sessao.admin) location.href = 'index.html';
+if (!sessao || !(sessao.admin || sessao.gestor)) location.href = 'index.html';
+let perfil = { admin: !!sessao.admin, unidade: sessao.admin ? null : sessao.unidade };
+document.addEventListener('DOMContentLoaded', () => aplicarPerfil());
+if (document.readyState !== 'loading') setTimeout(() => aplicarPerfil(), 0);
 const base = () => ({ p_token: sessao.token, p_dispositivo: window.centralDispositivo() });
 let ultimo = null;
 
@@ -140,7 +150,7 @@ function tabela(linhas, colunas, barraCol) {
 
 const nomesEvento = {
   login: ['Login', 'verde'], logout: ['Saiu', ''], senha_incorreta: ['Senha errada', 'amarelo'],
-  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], cadastro_solicitado: ['Pediu cadastro', 'amarelo'], cadastro_aprovado: ['Cadastro aprovado', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], versao_excluida: ['Excluiu versão', ''], senha_criada: ['Criou/trocou a senha', 'verde']
+  login_negado_outro_pc: ['Bloqueado: já logado em outro PC', 'vermelho'], derrubada_admin: ['Sessão encerrada pelo admin', 'amarelo'], versao_publicada: ['Publicou versão', 'verde'], cadastro_solicitado: ['Pediu cadastro', 'amarelo'], cadastro_aprovado: ['Cadastro aprovado', 'verde'], versao_ativada: ['Trocou de versão', 'amarelo'], versao_excluida: ['Excluiu versão', ''], piloto_encerrado: ['Encerrou piloto', 'amarelo'], virou_gestor: ['Virou gestor da unidade', 'verde'], deixou_gestor: ['Deixou de ser gestor', ''], senha_criada: ['Criou/trocou a senha', 'verde']
 };
 
 async function carregar() {
@@ -148,6 +158,7 @@ async function carregar() {
     const d = await window.centralRpc('admin_relatorio', { ...base(), p_inicio: $('ini').value, p_fim: $('fim').value });
     ['por_usuario', 'por_usuario_robo', 'por_robo', 'por_dia', 'sessoes_ativas', 'eventos', 'por_unidade'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     ultimo = d;
+    if (d.perfil) { perfil = d.perfil; aplicarPerfil(); }
     const total = d.por_usuario.reduce((a, l) => a + l.total, 0);
     $('k-total').textContent = total.toLocaleString('pt-BR');
     $('k-usuarios').textContent = d.por_usuario.length;
@@ -176,7 +187,7 @@ async function carregar() {
       { t: 'Detalhe', k: 'detalhe' }]);
     mostrarEconomia();
     await carregarUsuarios();
-    carregarVersoes();
+    if (perfil.admin) carregarVersoes();
   } catch (e) {
     aviso(e.message, true);
     if (/sessão|login|expirou|administrador/i.test(e.message)) setTimeout(() => location.href = 'index.html', 1500);
@@ -222,11 +233,13 @@ function tabelaUsuarios(us) {
   return tabela(us, [
     { t: 'Nome', k: 'nome' }, { t: 'Login', k: 'login' },
     { t: 'Situação', f: u => (u.ativo ? '<span class="tag verde">Ativo</span>' : '<span class="tag vermelho">Desativado</span>') +
-                           (u.admin ? ' <span class="tag">admin</span>' : '') + (u.bloqueado ? ' <span class="tag amarelo">bloqueado por senha errada</span>' : '') +
+                           (u.admin ? ' <span class="tag">admin</span>' : '') + (u.gestor ? ' <span class="tag verde">⭐ gestor da unidade</span>' : '') + (u.bloqueado ? ' <span class="tag amarelo">bloqueado por senha errada</span>' : '') +
                            (u.trocar_senha ? ' <span class="tag amarelo">ainda não criou a senha</span>' : '') },
-    { t: '', f: u => `<button class="mini sec" onclick="mudarUnidade('${u.id}', '${esc(u.nome)}', '${esc(u.unidade || '')}')">Unidade</button> ` +
+    { t: '', f: u => (u.admin && !perfil.admin ? '' :
+                     (perfil.admin && !u.admin ? `<button class="mini sec" onclick="virarGestor('${u.id}', '${esc(u.nome)}', ${!u.gestor})">${u.gestor ? 'Tirar gestor' : '⭐ Gestor'}</button> ` : '') +
+                     (perfil.admin ? `<button class="mini sec" onclick="mudarUnidade('${u.id}', '${esc(u.nome)}', '${esc(u.unidade || '')}')">Unidade</button> ` : '') +
                      `<button class="mini sec" onclick="trocarSenha('${u.id}', '${esc(u.nome)}')">Nova senha</button> ` +
-                     `<button class="mini ${u.ativo ? 'perigo' : ''}" onclick="ativar('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>` }]);
+                     `<button class="mini ${u.ativo ? 'perigo' : ''}" onclick="ativar('${u.id}', ${!u.ativo})">${u.ativo ? 'Desativar' : 'Reativar'}</button>`) }]);
 }
 
 async function carregarVersoes() {
@@ -234,37 +247,68 @@ async function carregarVersoes() {
     const vs = await window.centralRpc('admin_listar_versoes', base());
     $('t-versoes').innerHTML = tabela(vs, [
       { t: 'Canal', f: v => v.canal === 'producao' ? '<span class="tag verde">Produção</span>' : '<span class="tag amarelo">Teste</span>' },
-      { t: 'Versão', f: v => 'v' + v.versao + (v.ativo ? ' <span class="tag verde">em uso</span>' : '') },
+      { t: 'Versão', f: v => 'v' + v.versao + (v.ativo ? ' <span class="tag verde">em uso</span>' : '') +
+                             (v.piloto ? ` <span class="tag amarelo">🧪 piloto: ${esc((v.piloto_unidades || []).join(', '))}</span>` : '') },
+      { t: 'O que mudou', f: v => v.notas ? esc(v.notas) : '<span style="color:#666">—</span>' },
       { t: 'Publicada', f: v => dataHora(v.publicado_em) }, { t: 'Por', k: 'publicado_por' },
-      { t: 'Tamanho', f: v => Math.round(v.tamanho / 1024) + ' KB', n: 1 },
-      { t: '', f: v => v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button> ` +
-                                       `<button class="mini perigo" onclick="excluirVersao('${v.canal}', ${v.versao})">🗑 Excluir</button>` }]);
+      { t: '', f: v => v.piloto
+          ? `<button class="mini" onclick="ativarVersao('${v.canal}', ${v.versao}, true)">✅ Liberar para todos</button> ` +
+            `<button class="mini sec" onclick="encerrarPiloto('${v.canal}')">Encerrar piloto</button>`
+          : v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button> ` +
+                           `<button class="mini perigo" onclick="excluirVersao('${v.canal}', ${v.versao})">🗑 Excluir</button>` }]);
   } catch (e) { $('t-versoes').innerHTML = '<div class="vazio">⚠️ ' + esc(e.message) + '</div>'; }
 }
 async function publicar() {
   const f = $('v-arquivo').files[0];
   if (!f) return aviso('Escolha o arquivo da Central primeiro.', true);
   const codigo = await f.text();
-  const canal = $('v-canal').value;
+  const escolha = $('v-canal').value, canal = escolha === 'teste' ? 'teste' : 'producao';
+  const unidades = escolha === 'piloto' ? [...document.querySelectorAll('#v-lista-unidades input:checked')].map(c => c.value) : null;
+  if (escolha === 'piloto' && !unidades.length) return aviso('Marque pelo menos uma unidade para o piloto.', true);
+  const notas = $('v-notas').value.trim();
   // conferências para não publicar o arquivo errado
   if (!codigo.includes('menu-central-robos') || !codigo.includes('const robos')) return aviso('Esse arquivo não parece ser a Central com os robôs (talvez seja o carregador?). Nada foi publicado.', true);
   if (codigo.includes('SEU-PROJETO.supabase.co') || codigo.includes('COLE-AQUI-A-CHAVE')) return aviso('Esse arquivo está sem o endereço/chave do Supabase preenchidos. Nada foi publicado.', true);
   try { new Function(codigo); } catch (e) { return aviso('O arquivo tem um erro de digitação no código (' + e.message + '). Nada foi publicado.', true); }
-  const nome = canal === 'producao' ? 'PRODUÇÃO (todos os usuários)' : 'TESTE';
+  const nome = escolha === 'piloto' ? 'PILOTO (só ' + unidades.join(', ') + ')' : canal === 'producao' ? 'PRODUÇÃO (todos os usuários)' : 'TESTE';
   if (!confirm(`Publicar "${f.name}" (${Math.round(codigo.length / 1024)} KB) no canal ${nome}?`)) return;
   try {
-    const r = await window.centralRpc('admin_publicar_codigo', { ...base(), p_canal: canal, p_codigo: codigo });
+    const r = await window.centralRpc('admin_publicar_codigo', { ...base(), p_canal: canal, p_codigo: codigo, p_notas: notas || null, p_unidades: unidades });
     aviso(`Publicado! ${nome}: versão ${r.versao}. Vale a partir do próximo clique no favorito.`);
-    $('v-arquivo').value = '';
+    $('v-arquivo').value = ''; $('v-notas').value = '';
     carregarVersoes();
   } catch (e) { aviso(e.message, true); }
 }
-async function ativarVersao(canal, versao) {
-  if (!confirm(`Usar a versão ${versao} no canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?`)) return;
+async function ativarVersao(canal, versao, liberar) {
+  if (!confirm(liberar ? `Liberar a versão ${versao} para TODAS as unidades?` : `Usar a versão ${versao} no canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?`)) return;
   try { await window.centralRpc('admin_ativar_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' em uso.'); carregarVersoes(); }
   catch (e) { aviso(e.message, true); }
 }
 
+async function encerrarPiloto(canal) {
+  if (!confirm('Encerrar o piloto? As unidades do piloto voltam para a versão em uso.')) return;
+  try { await window.centralRpc('admin_encerrar_piloto', { ...base(), p_canal: canal }); aviso('Piloto encerrado.'); carregarVersoes(); }
+  catch (e) { aviso(e.message, true); }
+}
+function mostrarPiloto() {
+  const piloto = $('v-canal').value === 'piloto';
+  $('v-unidades').style.display = piloto ? 'block' : 'none';
+  if (piloto && !$('v-lista-unidades').children.length) {
+    window.centralRpc('listar_unidades', {}).then(lista => {
+      $('v-lista-unidades').innerHTML = (lista || []).map(u => `<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" value="${esc(u)}"> ${esc(u)}</label>`).join('') ||
+        '<span style="color:#888">Nenhuma unidade cadastrada ainda.</span>';
+    }).catch(e => aviso(e.message, true));
+  }
+}
+function aplicarPerfil() {
+  const gestor = !perfil.admin;
+  document.body.classList.toggle('modo-gestor', gestor);
+  document.querySelector('header h1').textContent = gestor ? '📊 Painel da unidade ' + (perfil.unidade || '') : '📊 Central de Automação — Painel';
+}
+function virarGestor(id, nome, sim) {
+  if (!confirm(sim ? `Tornar ${nome} gestor(a) da unidade? Ele(a) vai poder ver o painel só da unidade dele(a), aprovar cadastros e dar nova senha para a equipe.` : `Tirar ${nome} de gestor(a)?`)) return;
+  acao('admin_definir_gestor', { p_usuario_id: id, p_gestor: sim }, sim ? `${nome} agora é gestor(a) da unidade.` : `${nome} não é mais gestor(a).`);
+}
 async function excluirVersao(canal, versao) {
   if (!confirm(`Excluir a versão ${versao} do canal ${canal === 'producao' ? 'PRODUÇÃO' : 'TESTE'}?\n\nEla some da lista e não dá para voltar para ela depois.`)) return;
   try { await window.centralRpc('admin_excluir_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' excluída.'); carregarVersoes(); }
