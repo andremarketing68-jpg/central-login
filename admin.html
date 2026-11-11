@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1e1e1e">
+<link rel="icon" href="icone-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Central">
+<script>if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));</script>
 <title>Central de Automação — Painel</title>
 <style>
   * { box-sizing: border-box; }
@@ -43,6 +50,17 @@
   details.unidade > summary::before { content: '▸ '; color: #2d7dff; }
   details.unidade[open] > summary::before { content: '▾ '; }
   details.unidade > table { margin: 0 8px 8px; width: calc(100% - 16px); }
+  details.unidade { overflow-x: auto; }
+  @media (max-width: 640px) {
+    header { padding: 10px 12px; } header h1 { font-size: 16px; }
+    main { padding: 10px; }
+    .kpis { grid-template-columns: 1fr 1fr; gap: 8px; } .kpi { padding: 10px; } .kpi .v { font-size: 20px; }
+    section { padding: 12px; }
+    .novo > input, .novo > select, .novo > button, .novo > label { flex: 1 1 100%; }
+    .filtros input[type=date] { flex: 1 1 40%; }
+    button.mini { padding: 7px 10px; font-size: 13px; }
+    #msg { left: 10px; right: 10px; bottom: 10px; max-width: none; }
+  }
   body.modo-gestor #sec-versoes, body.modo-gestor #n-unidade, body.modo-gestor .so-admin { display: none !important; }
 </style>
 </head>
@@ -349,6 +367,15 @@ document.querySelectorAll('.periodo').forEach(b => b.onclick = () => {
   $('ini').value = hojeISO(+b.dataset.dias); $('fim').value = hojeISO(0); carregar();
 });
 if (sessao) { $('quem').textContent = '👤 ' + sessao.nome; document.querySelector('.periodo[data-dias="0"]').click(); }
+</script>
+<button id="instalar-app" style="display:none;position:fixed;bottom:16px;left:16px;padding:8px 12px;border:none;border-radius:8px;background:#2d7dff;color:#fff;font-weight:600;cursor:pointer;z-index:9">📲 Instalar como app</button>
+<script>
+(function () {
+  var pedido = null, b = document.getElementById('instalar-app');
+  window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); pedido = e; if (!window.opener) b.style.display = 'block'; });
+  b.onclick = function () { if (!pedido) return; pedido.prompt(); pedido.userChoice.finally(function () { pedido = null; b.style.display = 'none'; }); };
+  window.addEventListener('appinstalled', function () { b.style.display = 'none'; });
+})();
 </script>
 </body>
 </html>
