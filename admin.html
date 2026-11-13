@@ -144,6 +144,31 @@
     <div id="t-versoes"></div>
   </section>
 
+  <section id="sec-editor" class="so-admin">
+    <h2>🛠️ Editor de robôs <button class="mini sec" onclick="abrirEditor()">Abrir a versão de Teste em uso</button></h2>
+    <div id="ed-info" style="color:#aaa;font-size:13px">Aqui você muda o nome ou o código de um robô, cria um robô novo ou apaga um, sem mexer no arquivo inteiro.
+      Ao salvar, vira uma <b>nova versão de Teste</b>. Depois de testar, clique em <b>⬆ Produção</b> na lista de versões acima.</div>
+    <div id="ed-area" style="display:none;margin-top:12px">
+      <div class="novo" style="align-items:center">
+        <select id="ed-robo" onchange="escolherRobo(this.value)" style="min-width:220px"></select>
+        <button class="mini" onclick="novoRobo()">＋ Novo robô</button>
+        <button class="mini sec" onclick="duplicarRobo()">Duplicar</button>
+        <button class="mini perigo" onclick="excluirRobo()">Apagar robô</button>
+        <span id="ed-base" style="color:#888;font-size:12px"></span>
+      </div>
+      <div class="novo" style="align-items:center"><span style="color:#aaa">Nome do botão:</span> <input id="ed-nome" style="flex:1" oninput="mudouNome()"></div>
+      <textarea id="ed-codigo" spellcheck="false" oninput="mudouCodigo()"
+        style="width:100%;box-sizing:border-box;height:440px;font-family:Consolas,'Courier New',monospace;font-size:13px;line-height:1.45;background:#111;color:#e6e6e6;border:1px solid #444;border-radius:8px;padding:10px;tab-size:4;white-space:pre;overflow:auto"></textarea>
+      <div id="ed-erro" style="min-height:20px;margin:6px 0;font-size:13px"></div>
+      <div class="novo" style="align-items:center">
+        <input id="ed-notas" placeholder="O que mudou? (ex.: PROASA agora espera mais o nome)" style="flex:1">
+        <button class="sec" onclick="verificarEditor(true)">✔ Verificar</button>
+        <button onclick="salvarEditor()">💾 Salvar como nova versão de Teste</button>
+        <button class="sec" onclick="baixarEditor()">⬇ Baixar arquivo</button>
+      </div>
+    </div>
+  </section>
+
   <section><h2>Eventos (logins, bloqueios, saídas)</h2><div id="t-eventos"></div></section>
 </main>
 <div id="msg"></div>
@@ -308,8 +333,9 @@ async function carregarVersoes() {
       { t: '', f: v => v.piloto
           ? `<button class="mini" onclick="ativarVersao('${v.canal}', ${v.versao}, true)">✅ Liberar para todos</button> ` +
             `<button class="mini sec" onclick="encerrarPiloto('${v.canal}')">Encerrar piloto</button>`
-          : v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button> ` +
-                           `<button class="mini perigo" onclick="excluirVersao('${v.canal}', ${v.versao})">🗑 Excluir</button>` }]);
+          : (v.canal === 'teste' ? `<button class="mini" onclick="promover(${v.versao})">⬆ Produção</button> ` : '') +
+            (v.ativo ? '' : `<button class="mini sec" onclick="ativarVersao('${v.canal}', ${v.versao})">Usar esta</button> ` +
+                           `<button class="mini perigo" onclick="excluirVersao('${v.canal}', ${v.versao})">🗑 Excluir</button>`) }]);
   } catch (e) { $('t-versoes').innerHTML = '<div class="vazio">⚠️ ' + esc(e.message) + '</div>'; }
 }
 async function publicar() {
@@ -368,6 +394,138 @@ async function excluirVersao(canal, versao) {
   try { await window.centralRpc('admin_excluir_versao', { ...base(), p_canal: canal, p_versao: versao }); aviso('Versão ' + versao + ' excluída.'); carregarVersoes(); }
   catch (e) { aviso(/admin_excluir_versao|schema cache|Could not find/i.test(e.message) ? 'Rode antes o arquivo ATUALIZAR-BANCO-V8.sql no Supabase.' : e.message, true); }
 }
+
+// ======================= Editor de robôs =======================
+const ED = { base: null, versao: null, prefixo: '', sufixo: '', robos: [], atual: -1, renomes: [], mexidos: new Set() };
+const MARCA_ROBOS = 'const robos = {';
+function separarRobos(codigo) {
+  const i = codigo.indexOf(MARCA_ROBOS);
+  if (i < 0) throw new Error('Não achei a lista de robôs neste arquivo.');
+  const ini = i + MARCA_ROBOS.length, fim = codigo.indexOf('\n    };\n', ini);
+  if (fim < 0) throw new Error('Não achei o fim da lista de robôs.');
+  const corpo = codigo.slice(ini, fim);
+  const re = /^[ \t]*"([^"\\]+)": \(\) => \{[ \t]*\r?\n?/gm;
+  const pos = []; let m;
+  while ((m = re.exec(corpo))) pos.push({ nome: m[1], ini: m.index, corpoIni: m.index + m[0].length });
+  if (!pos.length) throw new Error('Nenhum robô encontrado.');
+  const robos = pos.map((p, k) => {
+    const ate = k + 1 < pos.length ? pos[k + 1].ini : corpo.length;
+    return { nome: p.nome, corpo: corpo.slice(p.corpoIni, ate).replace(/\s*\}\s*,?\s*$/, '') };
+  });
+  return { prefixo: codigo.slice(0, ini), sufixo: codigo.slice(fim), robos };
+}
+function juntarRobos() {
+  let suf = ED.sufixo;
+  ED.renomes.forEach(([a, b]) => { suf = suf.split("'" + a + "'").join("'" + b + "'"); });   // listas internas da Central usam o nome
+  return ED.prefixo + '\n' + ED.robos.map(r => `        "${r.nome}": () => {\n${r.corpo}\n        }`).join(',\n') + suf;
+}
+async function abrirEditor() {
+  if (ED.mexidos.size && !confirm('Você tem mudanças não salvas no editor. Abrir de novo e perder as mudanças?')) return;
+  try {
+    const r = await window.centralRpc('admin_obter_codigo', { ...base(), p_canal: 'teste', p_versao: null });
+    const sep = separarRobos(r.codigo);
+    Object.assign(ED, { base: r.codigo, versao: r.versao, prefixo: sep.prefixo, sufixo: sep.sufixo, robos: sep.robos, atual: -1, renomes: [], mexidos: new Set() });
+    $('ed-area').style.display = 'block';
+    $('ed-base').textContent = `Base: Teste v${r.versao} · ${ED.robos.length} robôs`;
+    listarRobosEditor(0);
+    edMsg('');
+  } catch (e) { aviso(/admin_obter_codigo|schema cache|Could not find/i.test(e.message) ? 'Rode antes o ATUALIZAR-BANCO-V13.sql no Supabase.' : e.message, true); }
+}
+function listarRobosEditor(indice) {
+  $('ed-robo').innerHTML = ED.robos.map((r, i) => `<option value="${i}">${ED.mexidos.has(r) ? '● ' : ''}${esc(r.nome)}</option>`).join('');
+  escolherRobo(indice);
+}
+function escolherRobo(i) {
+  i = Math.max(0, Math.min(Number(i) || 0, ED.robos.length - 1));
+  ED.atual = i; $('ed-robo').value = String(i);
+  const r = ED.robos[i]; if (!r) return;
+  $('ed-nome').value = r.nome; $('ed-codigo').value = r.corpo; $('ed-codigo').scrollTop = 0;
+}
+function marcarMexido() { const r = ED.robos[ED.atual]; if (!r) return; ED.mexidos.add(r); const o = $('ed-robo').options[ED.atual]; if (o) o.textContent = '● ' + r.nome; }
+function mudouCodigo() { const r = ED.robos[ED.atual]; if (!r) return; r.corpo = $('ed-codigo').value; marcarMexido(); }
+function mudouNome() {
+  const r = ED.robos[ED.atual]; if (!r) return;
+  const novo = $('ed-nome').value.replace(/["\\]/g, '').replace(/\s+/g, ' ');
+  if (!r.nomeOriginal) r.nomeOriginal = r.nome;
+  r.nome = novo; marcarMexido();
+}
+function novoRobo() {
+  const nome = (prompt('Nome do botão do robô novo:') || '').replace(/["\\]/g, '').trim();
+  if (!nome) return;
+  if (ED.robos.some(r => r.nome.toLowerCase() === nome.toLowerCase())) return aviso('Já existe um robô com esse nome.', true);
+  const r = { nome, novo: true, corpo:
+`            (function () {
+                var texto = prompt("Cole os códigos de 8 dígitos:");
+                if (!texto) return;
+                var codigos = texto.match(/\\b\\d{8}\\b/g) || [];
+                // escreva aqui o que o robô faz com cada código
+                alert("Finalizado");
+            })();` };
+  ED.robos.push(r); ED.mexidos.add(r); listarRobosEditor(ED.robos.length - 1);
+}
+function duplicarRobo() {
+  const o = ED.robos[ED.atual]; if (!o) return;
+  const r = { nome: o.nome + ' (cópia)', corpo: o.corpo, novo: true };
+  ED.robos.splice(ED.atual + 1, 0, r); ED.mexidos.add(r); listarRobosEditor(ED.atual + 1);
+}
+function excluirRobo() {
+  const r = ED.robos[ED.atual]; if (!r) return;
+  if (!confirm(`Apagar o robô "${r.nome}"? (só vale quando você salvar)`)) return;
+  ED.robos.splice(ED.atual, 1); ED.mexidos.add({ apagado: r.nome }); listarRobosEditor(ED.atual);
+}
+function edMsg(t, ok) { $('ed-erro').style.color = ok ? '#7ee2a0' : '#ff8a80'; $('ed-erro').textContent = t; }
+function verificarEditor(mostrarOk) {
+  const nomes = new Set();
+  for (const r of ED.robos) {
+    if (!r.nome.trim()) { edMsg('Tem um robô sem nome.'); return null; }
+    const k = r.nome.trim().toLowerCase();
+    if (nomes.has(k)) { edMsg(`Dois robôs com o mesmo nome: "${r.nome}".`); return null; }
+    nomes.add(k);
+    try { new Function(r.corpo); } catch (e) { escolherRobo(ED.robos.indexOf(r)); edMsg(`❌ Erro no código do robô "${r.nome}": ${e.message}`); return null; }
+  }
+  ED.renomes = ED.robos.filter(r => r.nomeOriginal && r.nomeOriginal !== r.nome).map(r => [r.nomeOriginal, r.nome]);
+  const codigo = juntarRobos();
+  try { new Function(codigo); } catch (e) { edMsg('❌ Erro no arquivo: ' + e.message); return null; }
+  if (codigo.length < 200 || codigo.indexOf('menu-central-robos') < 0) { edMsg('❌ O arquivo ficou incompleto.'); return null; }
+  if (mostrarOk) edMsg(`✔ Tudo certo: ${ED.robos.length} robôs, sem erro de escrita. (Isso não testa se o robô funciona no portal: teste no canal Teste.)`, true);
+  return codigo;
+}
+async function salvarEditor() {
+  const codigo = verificarEditor(false); if (!codigo) return;
+  const alterados = ED.robos.filter(r => ED.mexidos.has(r)).map(r => r.nome);
+  const apagados = [...ED.mexidos].filter(x => x.apagado).map(x => x.apagado);
+  if (!alterados.length && !apagados.length) return edMsg('Nada foi alterado.');
+  const notas = $('ed-notas').value.trim() || ('Editor: ' + [alterados.length ? 'mudou ' + alterados.join(', ') : '', apagados.length ? 'apagou ' + apagados.join(', ') : ''].filter(Boolean).join('; '));
+  if (!confirm(`Salvar como nova versão de TESTE?\n\n${notas}`)) return;
+  try {
+    const r = await window.centralRpc('admin_publicar_codigo', { ...base(), p_canal: 'teste', p_codigo: codigo, p_notas: notas, p_unidades: null });
+    ED.mexidos = new Set(); ED.renomes = []; ED.robos.forEach(x => { delete x.nomeOriginal; delete x.novo; });
+    const sep = separarRobos(codigo); ED.prefixo = sep.prefixo; ED.sufixo = sep.sufixo; ED.base = codigo; ED.versao = r.versao;
+    $('ed-base').textContent = `Base: Teste v${r.versao} · ${ED.robos.length} robôs`; $('ed-notas').value = '';
+    listarRobosEditor(ED.atual);
+    edMsg(`✔ Salvo como Teste v${r.versao}. Teste com o favorito de teste; se estiver bom, clique em ⬆ Produção na lista de versões.`, true);
+    carregarVersoes();
+  } catch (e) { edMsg('❌ ' + e.message); }
+}
+function baixarEditor() {
+  const codigo = verificarEditor(false); if (!codigo) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([codigo], { type: 'text/javascript' }));
+  a.download = 'CENTRAL-editada.js'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function promover(versao) {
+  if (!confirm(`Mandar a versão de TESTE v${versao} para PRODUÇÃO (todos os usuários)?`)) return;
+  try { const r = await window.centralRpc('admin_promover_versao', { ...base(), p_versao_teste: versao, p_notas: null }); aviso(`Pronto! Agora a Produção está na v${r.versao}.`); carregarVersoes(); }
+  catch (e) { aviso(/admin_promover_versao|schema cache|Could not find/i.test(e.message) ? 'Rode antes o ATUALIZAR-BANCO-V13.sql no Supabase.' : e.message, true); }
+}
+document.addEventListener('keydown', (e) => {
+  if (e.target && e.target.id === 'ed-codigo' && e.key === 'Tab') {
+    e.preventDefault();
+    const ta = e.target, a = ta.selectionStart, b = ta.selectionEnd;
+    ta.value = ta.value.slice(0, a) + '    ' + ta.value.slice(b); ta.selectionStart = ta.selectionEnd = a + 4; mudouCodigo();
+  }
+});
+window.addEventListener('beforeunload', (e) => { if (ED.mexidos.size) { e.preventDefault(); e.returnValue = ''; } });
 
 async function acao(fn, args, ok) {
   try { await window.centralRpc(fn, { ...base(), ...args }); aviso(ok); carregar(); } catch (e) { aviso(e.message, true); }
