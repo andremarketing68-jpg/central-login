@@ -87,6 +87,13 @@
     <div class="kpi"><div class="v" id="k-online">–</div><div class="l">Logados agora</div></div>
   </div>
 
+  <section id="sec-problemas" style="border-color:#e67e22">
+    <h2 style="color:#ffb26b">⚠️ Problemas <span id="p-abertos" style="font-size:12px;font-weight:400;color:#999"></span>
+      <label style="font-size:12px;font-weight:400;color:#aaa;display:flex;align-items:center;gap:5px"><input type="checkbox" id="p-resolvidos" onchange="mostrarProblemas()"> mostrar resolvidos</label></h2>
+    <div style="color:#888;font-size:12px;margin-bottom:10px">Registrados sozinhos pela Central (erros, alertas, códigos que não apareceram na tela, robô parado) ou enviados pelos atendentes no botão <b>Reportar problema</b>.</div>
+    <div id="t-problemas"></div>
+  </section>
+
   <section id="sec-economia" style="border-color:#27ae60">
     <h2 style="color:#7ee2a0">🤖 Códigos lançados pelos robôs <span style="font-size:12px;color:#999;font-weight:400">no período escolhido</span></h2>
     <div id="t-econ-robo"></div>
@@ -204,12 +211,41 @@ async function carregar() {
       { t: 'O quê', f: l => { const e = nomesEvento[l.tipo] || [l.tipo, '']; return `<span class="tag ${e[1]}">${esc(e[0])}</span>`; } },
       { t: 'Detalhe', k: 'detalhe' }]);
     mostrarEconomia();
+    mostrarProblemas();
     await carregarUsuarios();
     if (perfil.admin) carregarVersoes();
   } catch (e) {
     aviso(e.message, true);
     if (/sessão|login|expirou|administrador/i.test(e.message)) setTimeout(() => location.href = 'index.html', 1500);
   }
+}
+
+const TIPOS_PROBLEMA = { erro: ['Erro', 'vermelho'], alerta: ['Alerta', 'amarelo'], faltaram: ['Não apareceram', 'amarelo'], parou: ['Parou', 'vermelho'], reporte: ['Reporte', 'verde'] };
+function mostrarProblemas() {
+  const d = ultimo; if (!d) return;
+  if (!Array.isArray(d.problemas)) {
+    $('t-problemas').innerHTML = '<div class="vazio">⚠️ Rode o ATUALIZAR-BANCO-V12.sql no Supabase para ver os problemas.</div>';
+    return;
+  }
+  $('p-abertos').textContent = d.problemas_abertos ? `— ${d.problemas_abertos} em aberto` : '— nenhum em aberto';
+  const lista = d.problemas.filter(p => $('p-resolvidos').checked || !p.resolvido);
+  $('t-problemas').innerHTML = tabela(lista, [
+    { t: 'Quando', f: p => dataHora(p.criado_em) },
+    { t: 'Robô', k: 'robo' },
+    { t: 'Tipo', f: p => { const [n, c] = TIPOS_PROBLEMA[p.tipo] || [p.tipo, '']; return `<span class="tag ${c}">${esc(n)}</span>`; } },
+    { t: 'Pessoa', f: p => esc(p.nome) + (p.unidade ? `<br><span style="color:#888;font-size:12px">${esc(p.unidade)}</span>` : '') },
+    { t: 'O que aconteceu', f: p => `<div style="white-space:normal;min-width:240px;max-width:420px">${esc(p.detalhe || '')}${p.pagina ? `<div style="color:#777;font-size:12px">${esc(p.pagina)}</div>` : ''}</div>` },
+    { t: 'Códigos', f: p => (p.codigos || []).length ? `<div style="white-space:normal;max-width:180px;font-family:monospace;font-size:12px">${esc(p.codigos.slice(0, 12).join(' '))}${p.codigos.length > 12 ? ' …+' + (p.codigos.length - 12) : ''}</div>` : '' },
+    { t: '', f: p => p.resolvido ? `<button class="mini sec" onclick="resolverProblema(${p.id}, false)">Reabrir</button>`
+                                 : `<button class="mini" onclick="resolverProblema(${p.id}, true)">✓ Resolvido</button>` }]);
+}
+async function resolverProblema(id, sim) {
+  try {
+    await window.centralRpc('admin_resolver_problema', { ...base(), p_id: id, p_resolvido: sim });
+    const p = ultimo.problemas.find(x => x.id === id); if (p) p.resolvido = sim;
+    ultimo.problemas_abertos = Math.max(0, (ultimo.problemas_abertos || 0) + (sim ? -1 : 1));
+    mostrarProblemas();
+  } catch (e) { aviso(e.message, true); }
 }
 
 function mostrarEconomia() {
