@@ -35,6 +35,18 @@
   .rodape { text-align: center; margin-top: 16px; font-size: 12px; color: #777; }
   a { color: #2d7dff; }
   .oculto { display: none; }
+  .card.largo { width: 400px; }
+  #tutorial .passo { text-align: center; }
+  #tutorial .ico { font-size: 54px; line-height: 1; margin: 4px 0 10px; }
+  #tutorial h2 { margin: 0 0 10px; font-size: 18px; color: #fff; }
+  #tutorial .txt { text-align: left; font-size: 14px; line-height: 1.55; color: #ddd; background: #262626; border-radius: 10px; padding: 12px 14px; }
+  #tutorial .txt b { color: #fff; }
+  #tutorial .pontos { display: flex; gap: 6px; justify-content: center; margin: 14px 0 0; }
+  #tutorial .pontos i { width: 8px; height: 8px; border-radius: 50%; background: #444; display: block; }
+  #tutorial .pontos i.on { background: #2d7dff; width: 22px; border-radius: 4px; }
+  #tutorial .botoes { display: flex; gap: 8px; }
+  #tutorial .botoes button { margin-top: 14px; }
+  #t-pular { display: block; text-align: center; margin-top: 10px; font-size: 12px; color: #888; }
 </style>
 </head>
 <body>
@@ -103,6 +115,13 @@
     <button id="sair" class="cinza">Sair deste computador</button>
   </div>
 
+  <div id="tutorial" class="oculto">
+    <div class="passo" id="t-passo"></div>
+    <div class="pontos" id="t-pontos"></div>
+    <div class="botoes"><button id="t-voltar" type="button" class="cinza">Voltar</button><button id="t-proximo" type="button">Próximo</button></div>
+    <a href="#" id="t-pular">Pular o tutorial</a>
+  </div>
+
   <div class="rodape">Criado por André Fernandes</div>
 </div>
 
@@ -121,7 +140,33 @@
     $('form-cadastro').classList.toggle('oculto', qual !== 'cadastro');
     $('cadastro-ok').classList.toggle('oculto', qual !== 'cadastro-ok');
     $('logado').classList.toggle('oculto', qual !== 'logado');
+    $('tutorial').classList.toggle('oculto', qual !== 'tutorial');
+    document.querySelector('.card').classList.toggle('largo', qual === 'tutorial');
   }
+
+  // ===== Tutorial de primeiro uso (4 telas) =====
+  const PASSOS = [
+    { ico: '👋', t: 'Bem-vinda à Central!', x: 'A Central <b>lança sozinha os códigos dos exames</b> nos portais dos convênios.<br><br>Você cola os códigos, clica uma vez e fica <b>livre para atender</b> enquanto o robô trabalha.' },
+    { ico: '🤖', t: 'Como abrir', x: '<b>1.</b> Abra o portal e a guia, e preencha os dados do paciente como sempre.<br><b>2.</b> Clique no favorito <b>🤖 Central</b>.<br><b>3.</b> O robô do portal aparece em <b style="color:#4ade80">verde</b> no topo. Na primeira vez do dia, entre com seu usuário e senha.' },
+    { ico: '📋', t: 'Como lançar', x: '<b>1.</b> Copie os códigos do pedido. Pode copiar o texto inteiro: a Central acha os códigos de 8 dígitos.<br><b>2.</b> Clique no robô, cole e clique em <b>▶ Iniciar</b>.<br><b>3.</b> Pode usar outra aba. No fim, a aba pisca e aparece um <b>resumo</b> do que entrou e do que faltou.' },
+    { ico: '⚠️', t: 'Cuidados', x: '• <b>Confira sempre a guia</b> antes de enviar.<br>• <b>Não clique no portal</b> enquanto o robô lança.<br>• Sua senha é <b>pessoal</b>: não empreste.<br>• Deu problema? Use o botão <b>⚠️ Reportar problema</b> na Central.' }
+  ];
+  let tutPasso = 0, tutFim = null;
+  function desenharTutorial() {
+    const p = PASSOS[tutPasso];
+    $('t-passo').innerHTML = '<div class="ico">' + p.ico + '</div><h2>' + p.t + '</h2><div class="txt">' + p.x + '</div>';
+    $('t-pontos').innerHTML = PASSOS.map((_, i) => '<i class="' + (i === tutPasso ? 'on' : '') + '"></i>').join('');
+    $('t-voltar').style.visibility = tutPasso ? 'visible' : 'hidden';
+    $('t-proximo').textContent = tutPasso === PASSOS.length - 1 ? 'Entendi, começar ✅' : 'Próximo';
+  }
+  function abrirTutorial(fim) {
+    tutPasso = 0; tutFim = fim; $('sub').textContent = 'Como usar a Central (1 minuto)'; mostrar('tutorial'); desenharTutorial();
+  }
+  function fecharTutorial() { const f = tutFim; tutFim = null; if (f) f(); }
+  $('t-voltar').addEventListener('click', () => { if (tutPasso) { tutPasso--; desenharTutorial(); } });
+  $('t-proximo').addEventListener('click', () => { if (tutPasso < PASSOS.length - 1) { tutPasso++; desenharTutorial(); } else fecharTutorial(); });
+  $('t-pular').addEventListener('click', (e) => { e.preventDefault(); fecharTutorial(); });
+  let tutorialMostrado = false;
   function erro(msg) { $('erro').textContent = msg; $('erro').style.display = msg ? 'block' : 'none'; }
 
   function horaFim(iso) {
@@ -149,6 +194,10 @@
       token: sessao.token, dispositivo: window.centralDispositivo(),
       nome: sessao.nome, admin: sessao.admin, valido_ate: sessao.valido_ate
     };
+    try {   // avisos do mural (a ponte não consegue buscar sozinha no portal)
+      const ra = await Promise.race([window.centralRpc('avisos_ativos', { p_token: dados.token, p_dispositivo: dados.dispositivo }), new Promise((_, n) => setTimeout(() => n(new Error('tempo')), 2500))]);
+      if (ra && ra.ok) dados.avisos = ra.avisos || [];
+    } catch (e) {}
     if (pedido.modo === 'ponte') {
       // Portal que bloqueia conexões: esta janela envia o uso guardado e entrega o código dos robôs
       $('voltando').textContent = 'Carregando os robôs...';
@@ -185,6 +234,16 @@
   }
 
   function logado(s) {
+    if (s.tutorial_visto === false && !tutorialMostrado) {
+      tutorialMostrado = true;
+      abrirTutorial(() => {
+        s.tutorial_visto = true;
+        try { window.centralSessao.salvar(s); } catch (e) {}
+        window.centralRpc('marcar_tutorial', { p_token: s.token, p_dispositivo: window.centralDispositivo() }).catch(() => {});
+        logado(s);
+      });
+      return;
+    }
     sessao = s;
     $('sub').textContent = 'Você já pode usar os robôs hoje.';
     $('nome').textContent = s.nome;
@@ -301,7 +360,7 @@
         p_dispositivo: window.centralDispositivo(), p_navegador: window.centralNavegador()
       });
       if (!r.ok) { erro(r.erro); return; }
-      const s = { token: r.token, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade, valido_ate: r.valido_ate, trocar_senha: r.trocar_senha };
+      const s = { token: r.token, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade, valido_ate: r.valido_ate, trocar_senha: r.trocar_senha, tutorial_visto: r.tutorial_visto };
       window.centralSessao.salvar(s);
       const digitada = $('senha').value;
       $('senha').value = '';
@@ -325,6 +384,12 @@
 
   // Ao abrir: já existe login de hoje neste computador?
   (async () => {
+    // Aberta pelo link "❓ Como usar" da Central
+    if (new URLSearchParams(location.search).has('tutorial')) {
+      abrirTutorial(() => { if (window.opener) window.close(); else location.href = location.pathname; });
+      $('t-pular').textContent = 'Fechar';
+      return;
+    }
     // Aberta pelo botão "Sair" de um portal que usa a ponte
     if (new URLSearchParams(location.search).has('sair')) {
       const s = window.centralSessao.ler();
@@ -338,8 +403,8 @@
     if (s) {
       try {
         const r = await window.centralRpc('validar_sessao', { p_token: s.token, p_dispositivo: window.centralDispositivo() });
-        if (r.ok && r.trocar_senha) { pedirNovaSenha({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade }, true, null); return; }
-        if (r.ok) { logado({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade }); return; }
+        if (r.ok && r.trocar_senha) { pedirNovaSenha({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade, tutorial_visto: r.tutorial_visto }, true, null); return; }
+        if (r.ok) { logado({ ...s, nome: r.nome, admin: r.admin, gestor: !!r.gestor, unidade: r.unidade, tutorial_visto: r.tutorial_visto }); return; }
         window.centralSessao.limpar();
         erro(r.erro);
       } catch (e) {

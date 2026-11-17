@@ -62,6 +62,16 @@
     #msg { left: 10px; right: 10px; bottom: 10px; max-width: none; }
   }
   body.modo-gestor #sec-versoes, body.modo-gestor #n-unidade, body.modo-gestor .so-admin { display: none !important; }
+  body:not(.modo-gestor) .so-gestor { display: none !important; }
+  .mural-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .mural-form textarea { flex: 1 1 100%; min-height: 54px; padding: 9px; border-radius: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; font: inherit; font-size: 14px; resize: vertical; }
+  .mural-form select { padding: 8px; border-radius: 8px; border: 1px solid #444; background: #2a2a2a; color: #fff; font-size: 13px; }
+  .mural-form button { padding: 9px 16px; border: none; border-radius: 8px; background: #2d7dff; color: #fff; font-weight: bold; cursor: pointer; }
+  .av-item { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; background: #1c2c4a; border: 1px solid #2d7dff; }
+  .av-item.alerta { background: #4a1c1c; border-color: #e74c3c; }
+  .av-item .av-txt { flex: 1; font-size: 14px; line-height: 1.4; }
+  .av-item .av-meta { font-size: 11px; color: #aaa; margin-top: 3px; }
+  .av-item button { padding: 6px 10px; border: none; border-radius: 6px; background: #444; color: #fff; cursor: pointer; font-size: 12px; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -92,6 +102,19 @@
       <label style="font-size:12px;font-weight:400;color:#aaa;display:flex;align-items:center;gap:5px"><input type="checkbox" id="p-resolvidos" onchange="mostrarProblemas()"> mostrar resolvidos</label></h2>
     <div style="color:#888;font-size:12px;margin-bottom:10px">Registrados sozinhos pela Central (erros, alertas, códigos que não apareceram na tela, robô parado) ou enviados pelos atendentes no botão <b>Reportar problema</b>.</div>
     <div id="t-problemas"></div>
+  </section>
+
+  <section id="sec-avisos" style="border-color:#2d7dff">
+    <h2 style="color:#8fb6ff">📢 Mural de avisos <span style="font-size:12px;color:#999;font-weight:400">aparecem no topo da Central</span></h2>
+    <div class="mural-form">
+      <textarea id="av-texto" maxlength="500" placeholder="Ex.: Portal do TRF fora do ar hoje — lançar manualmente até segunda ordem"></textarea>
+      <select id="av-tipo"><option value="info">📢 Informativo (azul)</option><option value="alerta">⚠️ Alerta (vermelho)</option></select>
+      <select id="av-unidade" class="so-admin"><option value="">Para todas as unidades</option></select>
+      <span id="av-unid-gestor" class="so-gestor" style="font-size:13px;color:#aaa"></span>
+      <select id="av-dias"><option value="1">Por 1 dia</option><option value="3">Por 3 dias</option><option value="7" selected>Por 7 dias</option><option value="30">Por 30 dias</option><option value="0">Até eu encerrar</option></select>
+      <button type="button" onclick="publicarAviso()">Publicar aviso</button>
+    </div>
+    <div id="t-avisos"></div>
   </section>
 
   <section id="sec-economia" style="border-color:#27ae60">
@@ -209,6 +232,7 @@ async function carregar() {
     ['por_usuario', 'por_usuario_robo', 'por_robo', 'por_dia', 'sessoes_ativas', 'eventos', 'por_unidade'].forEach(k => { if (!Array.isArray(d[k])) d[k] = []; });
     ultimo = d;
     if (d.perfil) { perfil = d.perfil; aplicarPerfil(); }
+    carregarAvisos();
     const total = d.por_usuario.reduce((a, l) => a + l.total, 0);
     $('k-total').textContent = total.toLocaleString('pt-BR');
     $('k-usuarios').textContent = d.por_usuario.length;
@@ -379,6 +403,42 @@ function mostrarPiloto() {
         '<span style="color:#888">Nenhuma unidade cadastrada ainda.</span>';
     }).catch(e => aviso(e.message, true));
   }
+}
+// ===== Mural de avisos =====
+let unidadesAviso = false;
+async function carregarAvisos() {
+  $('av-unid-gestor').textContent = 'Para a unidade ' + (perfil.unidade || '');
+  if (!unidadesAviso && perfil.admin) {
+    unidadesAviso = true;
+    window.centralRpc('listar_unidades', {}).then(lista => {
+      (lista || []).forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = 'Só para ' + u; $('av-unidade').appendChild(o); });
+    }).catch(() => {});
+  }
+  try {
+    const r = await window.centralRpc('admin_listar_avisos', base());
+    const lista = (r && r.avisos) || [];
+    $('t-avisos').innerHTML = lista.length ? lista.map(a => `<div class="av-item ${a.tipo === 'alerta' ? 'alerta' : ''}">
+        <div class="av-txt">${a.tipo === 'alerta' ? '⚠️' : '📢'} ${esc(a.texto)}
+          <div class="av-meta">${a.unidade ? 'Unidade ' + esc(a.unidade) : 'Todas as unidades'} · por ${esc(a.autor || '—')} em ${dataHora(a.criado_em)} · ${a.expira_em ? 'até ' + dataHora(a.expira_em) : 'sem prazo'}</div></div>
+        ${a.pode_encerrar ? `<button onclick="encerrarAviso(${Number(a.id)})">Encerrar</button>` : ''}</div>`).join('')
+      : '<div class="vazio">Nenhum aviso no ar.</div>';
+  } catch (e) {
+    $('t-avisos').innerHTML = '<div class="vazio">⚠️ Mural indisponível: rode o ATUALIZAR-BANCO-V15.sql no Supabase.</div>';
+  }
+}
+async function publicarAviso() {
+  const texto = $('av-texto').value.trim();
+  if (!texto) return aviso('Escreva o aviso.', true);
+  try {
+    await window.centralRpc('admin_criar_aviso', { ...base(), p_texto: texto, p_tipo: $('av-tipo').value, p_unidade: perfil.admin ? ($('av-unidade').value || null) : perfil.unidade, p_dias: Number($('av-dias').value) });
+    $('av-texto').value = '';
+    aviso('Aviso publicado. Ele aparece na próxima vez que abrirem a Central.');
+    carregarAvisos();
+  } catch (e) { aviso(e.message, true); }
+}
+async function encerrarAviso(id) {
+  if (!confirm('Encerrar este aviso? Ele some da Central.')) return;
+  try { await window.centralRpc('admin_encerrar_aviso', { ...base(), p_id: id }); aviso('Aviso encerrado.'); carregarAvisos(); } catch (e) { aviso(e.message, true); }
 }
 function aplicarPerfil() {
   const gestor = !perfil.admin;
